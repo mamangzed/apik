@@ -7,6 +7,8 @@
 
 A modern API client inspired by Bruno, with request interception, environment variables, API documentation, and browser extension support.
 
+[![Live App](https://img.shields.io/badge/Live%20App-apik.app-16a34a?logo=googlechrome&logoColor=white)](https://apik.app/)
+
 [![Docker Build](https://github.com/mamangzed/apik/actions/workflows/docker-build.yml/badge.svg)](https://github.com/mamangzed/apik/actions/workflows/docker-build.yml)
 [![Docker Image](https://img.shields.io/badge/docker-dockerhub-blue?logo=docker)](https://hub.docker.com/r/wandahs/apik)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
