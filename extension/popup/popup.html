@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>APIK Interceptor</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      width: 320px;
+      min-height: 380px;
+      background: #1c2128;
+      color: #cdd9e5;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      font-size: 13px;
+    }
+
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 14px;
+      background: #161b22;
+      border-bottom: 1px solid #30363d;
+    }
+
+    .logo {
+      font-weight: 700;
+      font-size: 16px;
+      color: #f97316;
+      letter-spacing: -0.5px;
+    }
+
+    .version {
+      font-size: 10px;
+      color: #768390;
+      background: #373e47;
+      padding: 0 4px;
+      border-radius: 3px;
+    }
+
+    .section {
+      padding: 12px 14px;
+      border-bottom: 1px solid #30363d;
+    }
+
+    .section-label {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #768390;
+      margin-bottom: 8px;
+    }
+
+    .status-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      display: inline-block;
+      margin-right: 6px;
+    }
+    .status-dot.connected { background: #3fb950; animation: pulse 2s infinite; }
+    .status-dot.connecting { background: #d29922; animation: pulse 0.8s infinite; }
+    .status-dot.disconnected { background: #768390; }
+    .status-dot.error { background: #f85149; }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    .status-text { display: flex; align-items: center; }
+
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 8px;
+    }
+
+    .toggle {
+      position: relative;
+      width: 40px;
+      height: 22px;
+    }
+    .toggle input { opacity: 0; width: 0; height: 0; }
+    .toggle-slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: #373e47;
+      border-radius: 22px;
+      transition: 0.2s;
+    }
+    .toggle-slider::before {
+      position: absolute;
+      content: '';
+      height: 16px;
+      width: 16px;
+      left: 3px;
+      bottom: 3px;
+      background: #768390;
+      border-radius: 50%;
+      transition: 0.2s;
+    }
+    .toggle input:checked + .toggle-slider { background: #f97316; }
+    .toggle input:checked + .toggle-slider::before {
+      transform: translateX(18px);
+      background: white;
+    }
+
+    .input-group {
+      display: flex;
+      gap: 6px;
+      margin-top: 6px;
+    }
+    .input-group input {
+      flex: 1;
+      background: #22272e;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      padding: 6px 10px;
+      font-size: 12px;
+      color: #cdd9e5;
+      font-family: 'Consolas', monospace;
+      outline: none;
+    }
+    .input-group input:focus { border-color: #f97316; }
+    .input-group button {
+      background: #30363d;
+      border: 1px solid #444c56;
+      border-radius: 6px;
+      padding: 6px 10px;
+      color: #cdd9e5;
+      cursor: pointer;
+      font-size: 12px;
+      transition: background 0.15s;
+    }
+    .input-group button:hover { background: #444c56; }
+
+    .btn {
+      width: 100%;
+      padding: 8px 12px;
+      border-radius: 6px;
+      border: none;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+      transition: all 0.15s;
+    }
+    .btn-primary { background: #f97316; color: white; }
+    .btn-primary:hover { background: #ea6c0a; }
+    .btn-ghost { background: transparent; color: #768390; border: 1px solid #30363d; }
+    .btn-ghost:hover { color: #cdd9e5; border-color: #444c56; background: #22272e; }
+
+    .info-box {
+      background: #22272e;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      padding: 10px;
+      font-size: 11px;
+      line-height: 1.6;
+      color: #768390;
+    }
+    .info-box strong { color: #cdd9e5; }
+    .info-box code {
+      background: #373e47;
+      border-radius: 3px;
+      padding: 1px 4px;
+      font-family: 'Consolas', monospace;
+    }
+
+    .intercept-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 11px;
+      padding: 3px 8px;
+      border-radius: 12px;
+    }
+    .intercept-badge.on { background: rgba(249,115,22,0.2); color: #f97316; border: 1px solid rgba(249,115,22,0.4); }
+    .intercept-badge.off { background: rgba(118,131,144,0.15); color: #768390; border: 1px solid #30363d; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <span class="logo">APIK</span>
+    <span class="version">v1.0</span>
+    <span id="intercept-badge" class="intercept-badge off" style="margin-left:auto">● Off</span>
+  </div>
+
+  <div class="section">
+    <div class="section-label">Backend Connection</div>
+    <div class="status-row">
+      <div class="status-text">
+        <span id="status-dot" class="status-dot disconnected"></span>
+        <span id="status-text">Disconnected</span>
+      </div>
+    </div>
+    <div class="input-group" style="margin-top:8px">
+      <input id="ws-url" type="text" placeholder="wss://apik.app/ws/intercept" />
+      <button id="connect-btn">Connect</button>
+    </div>
+    <div class="input-group" style="margin-top:8px">
+      <input id="api-base-url" type="text" placeholder="https://apik.app" />
+    </div>
+    <div class="input-group" style="margin-top:8px">
+      <input id="app-base-url" type="text" placeholder="https://apik.app" />
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-label">Request Interception</div>
+    <div class="toggle-row">
+      <span>Enable Intercept</span>
+      <label class="toggle">
+        <input type="checkbox" id="intercept-toggle" />
+        <span class="toggle-slider"></span>
+      </label>
+    </div>
+    <p style="color:#768390;font-size:11px;margin-top:8px">
+      When enabled, captures <strong>fetch</strong> and <strong>XHR</strong> requests from web pages
+    </p>
+  </div>
+
+  <div class="section">
+    <div class="section-label">Quick Actions</div>
+    <div style="display:flex;flex-direction:column;gap:6px">
+      <button class="btn btn-primary" id="open-apik">Open APIK Client</button>
+      <button class="btn btn-ghost" id="open-settings">Settings</button>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="info-box">
+      <strong>How to use:</strong><br/>
+      1. Download extension zip from APIK header and load unpacked in browser<br/>
+      2. Set API/App base URL for your environment<br/>
+      3. Click <strong>Connect</strong> and enable intercept above<br/>
+      4. Requests from this tab will appear in APIK Intercept Panel
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

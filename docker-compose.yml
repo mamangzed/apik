@@ -1,0 +1,25 @@
+services:
+  apik:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        VITE_CLERK_PUBLISHABLE_KEY: ${VITE_CLERK_PUBLISHABLE_KEY:-}
+        VITE_APP_BASE_URL: ${VITE_APP_BASE_URL:-}
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-}
+        VITE_WS_BASE_URL: ${VITE_WS_BASE_URL:-}
+    container_name: apik
+    env_file:
+      - backend/.env
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 2611
+    ports:
+      - "2611:2611"
+      - "8080:8080"
+    cap_add:
+      - NET_ADMIN
+    volumes:
+      - ./backend/data:/app/backend/data
+    restart: unless-stopped

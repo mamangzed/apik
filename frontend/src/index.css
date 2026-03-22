@@ -1,0 +1,33 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-app-bg text-app-text;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply bg-app-accent hover:bg-app-accent-hover text-white text-sm font-medium px-4 py-1.5 rounded transition-colors;
+  }
+  .btn-ghost {
+    @apply text-app-muted hover:text-app-text hover:bg-app-hover px-2 py-1 rounded text-sm transition-colors;
+  }
+  .tab-btn {
+    @apply px-4 py-2 text-sm text-app-muted hover:text-app-text border-b-2 border-transparent transition-colors cursor-pointer;
+  }
+  .tab-btn.active {
+    @apply text-app-text border-app-accent;
+  }
+  .input-field {
+    @apply bg-app-panel border border-app-border rounded px-3 py-1.5 text-sm text-app-text placeholder-app-muted focus:outline-none focus:border-app-accent transition-colors w-full;
+  }
+  .panel {
+    @apply bg-app-panel border border-app-border rounded;
+  }
+  .kv-row {
+    @apply flex items-center gap-2 group;
+  }
+}

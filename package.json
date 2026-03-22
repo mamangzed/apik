@@ -1,0 +1,16 @@
+{
+    "name": "apix",
+    "version": "1.1.0",
+    "private": true,
+    "scripts": {
+        "install:all": "cd backend && npm install && cd ../frontend && npm install",
+        "dev": "start /b cmd /c \"cd backend && npm run dev\" && cd frontend && npm run dev",
+        "build": "cd backend && npm run build && cd ../frontend && npm run build",
+        "start": "cd backend && npm run start",
+        "start:prod": "npm run build && npm run start",
+        "docker:build": "docker compose build",
+        "docker:up": "docker compose up -d --build",
+        "docker:down": "docker compose down",
+        "docker:logs": "docker compose logs -f apik"
+    }
+}

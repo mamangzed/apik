@@ -1,0 +1,51 @@
+# Dependencies
+node_modules/
+package-lock.json
+yarn.lock
+
+# Environment
+.env
+.env.local
+.env.*.local
+*.pem
+
+# Build outputs
+dist/
+build/
+backend/dist/
+frontend/dist/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Runtime
+*.log
+logs/
+*.pid
+.apik-backend.pid
+apik.log
+
+# Data & certs
+backend/data/
+backend/certs/
+data/
+
+# Docker
+.dockerignore
+
+# Temporary
+tmp/
+temp/
+.cache/
+
+# IDE settings (keep only in .gitignore_global)
+*.sublime-workspace
+
+# OS specific
+Thumbs.db
+Desktop.ini

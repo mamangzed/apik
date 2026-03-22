@@ -1,0 +1,570 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>APIK Intercept</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0d1117;
+      --panel: #161b22;
+      --text: #c9d1d9;
+      --muted: #8b949e;
+      --border: #30363d;
+      --ok: #22c55e;
+      --bad: #ef4444;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, monospace;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Segoe UI, system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .topbar {
+      min-height: 44px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 6px 12px;
+      background: linear-gradient(180deg, #111827, #0f172a);
+      flex-shrink: 0;
+    }
+
+    .title { font-weight: 700; white-space: nowrap; }
+    .status { font-size: 12px; color: var(--muted); display: flex; gap: 8px; align-items: center; }
+    .dot { width: 8px; height: 8px; border-radius: 999px; background: var(--bad); }
+    .dot.on { background: var(--ok); }
+
+    .toolbar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex: 1;
+      min-width: 0;
+    }
+
+    .search {
+      flex: 1;
+      min-width: 200px;
+      max-width: 520px;
+      background: #0b1220;
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 6px;
+      height: 30px;
+      padding: 0 10px;
+      font-size: 12px;
+    }
+
+    .btn {
+      border: 1px solid var(--border);
+      background: #111827;
+      color: var(--text);
+      border-radius: 6px;
+      height: 30px;
+      padding: 0 10px;
+      font-size: 12px;
+      cursor: pointer;
+    }
+
+    .btn:hover { background: #1f2937; }
+
+    .layout {
+      flex: 1;
+      min-height: 0;
+      display: grid;
+      grid-template-rows: var(--top-size, 58%) 8px minmax(160px, 1fr);
+    }
+
+    .list {
+      overflow: auto;
+      font-family: var(--mono);
+      font-size: 12px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    table { width: 100%; border-collapse: collapse; }
+    thead th {
+      position: sticky;
+      top: 0;
+      text-align: left;
+      padding: 8px;
+      background: #111827;
+      border-bottom: 1px solid var(--border);
+      color: var(--muted);
+      font-weight: 600;
+      z-index: 2;
+    }
+
+    tbody tr { border-bottom: 1px solid #1f2937; cursor: pointer; }
+    tbody tr:hover { background: #111827; }
+    tbody tr.selected { background: #172033; }
+    td { padding: 8px; vertical-align: top; }
+
+    .method { display: inline-block; border-radius: 6px; padding: 2px 6px; font-weight: 700; font-size: 11px; color: white; }
+    .m-get { background: #14532d; }
+    .m-post { background: #9a3412; }
+    .m-put { background: #1e3a8a; }
+    .m-patch { background: #854d0e; }
+    .m-delete { background: #7f1d1d; }
+    .m-other { background: #374151; }
+
+    .url { color: #93c5fd; word-break: break-all; max-width: 540px; }
+    .host, .meta { color: var(--muted); }
+    .body {
+      max-width: 240px;
+      max-height: 68px;
+      overflow: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 6px;
+    }
+
+    .empty { color: var(--muted); text-align: center; padding: 20px; }
+
+    .details {
+      min-height: 0;
+      display: grid;
+      grid-template-columns: var(--left-size, 50%) 8px minmax(220px, 1fr);
+      gap: 0;
+      padding: 10px 10px 10px 10px;
+      background: #0b1220;
+    }
+
+    .splitter {
+      background: #111827;
+      border: 1px solid #1f2937;
+      border-radius: 5px;
+      transition: background 0.15s ease;
+    }
+
+    .splitter:hover {
+      background: #1f2937;
+    }
+
+    .splitter-horizontal {
+      margin: 0 8px;
+      cursor: row-resize;
+      height: 8px;
+    }
+
+    .splitter-vertical {
+      margin: 0 10px;
+      cursor: col-resize;
+      width: 8px;
+    }
+
+    .card {
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #0f172a;
+      overflow: hidden;
+    }
+
+    .card h3 {
+      margin: 0;
+      padding: 8px 10px;
+      font-size: 12px;
+      color: var(--muted);
+      border-bottom: 1px solid var(--border);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      font-weight: 700;
+    }
+
+    .card-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--border);
+      background: #0c1425;
+    }
+
+    .card-title {
+      font-size: 12px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      font-weight: 700;
+    }
+
+    .meta-bar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 7px 10px;
+      border-bottom: 1px solid var(--border);
+      background: #0b1326;
+      color: var(--muted);
+      font-size: 11px;
+      min-height: 35px;
+      flex-wrap: wrap;
+    }
+
+    .meta-bar strong {
+      color: var(--text);
+      font-weight: 600;
+    }
+
+    .status-code {
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .status-code.ok { color: #4ade80; }
+    .status-code.redirect { color: #fbbf24; }
+    .status-code.error { color: #f87171; }
+
+    .tabs {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--border);
+      background: #0b1326;
+    }
+
+    .tabs-right {
+      margin-left: auto;
+      display: flex;
+      gap: 6px;
+    }
+
+    .tab {
+      border: 1px solid var(--border);
+      background: #0f172a;
+      color: var(--muted);
+      border-radius: 6px;
+      height: 24px;
+      padding: 0 8px;
+      font-size: 11px;
+      cursor: pointer;
+    }
+
+    .tab.active {
+      background: #1d2a44;
+      color: var(--text);
+      border-color: #2d4064;
+    }
+
+    .tab-btn {
+      border: 1px solid var(--border);
+      background: #0f172a;
+      color: var(--muted);
+      border-radius: 6px;
+      height: 24px;
+      padding: 0 8px;
+      font-size: 11px;
+      cursor: pointer;
+    }
+
+    .tab-btn:hover {
+      background: #16213a;
+      color: var(--text);
+    }
+
+    .code {
+      margin: 0;
+      padding: 10px;
+      font-family: var(--mono);
+      font-size: 12px;
+      white-space: pre-wrap;
+      word-break: break-word;
+      overflow: auto;
+      flex: 1;
+      color: #dbeafe;
+      line-height: 1.45;
+    }
+
+    .detail-body {
+      flex: 1;
+      min-height: 0;
+      overflow: auto;
+      background: #091224;
+    }
+
+    .code-view {
+      margin: 0;
+      min-height: 100%;
+      padding: 12px;
+      font-family: var(--mono);
+      font-size: 12px;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-break: break-word;
+      color: #dbeafe;
+    }
+
+    .empty-state {
+      padding: 18px 12px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .kv-list {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .kv-head,
+    .kv-row {
+      display: grid;
+      grid-template-columns: minmax(180px, 0.9fr) minmax(0, 1.1fr);
+      gap: 12px;
+      padding: 8px 12px;
+      border-bottom: 1px solid #1a2437;
+      align-items: start;
+    }
+
+    .kv-head {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      background: #0f172a;
+      color: var(--muted);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .kv-key {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: #7dd3fc;
+      word-break: break-word;
+    }
+
+    .kv-value {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--text);
+      word-break: break-word;
+      white-space: pre-wrap;
+    }
+
+    .cookie-list {
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .cookie-card {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #0f172a;
+      padding: 10px;
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--text);
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .token-key { color: #7dd3fc; }
+    .token-string { color: #86efac; }
+    .token-number { color: #fda4af; }
+    .token-boolean { color: #fbbf24; }
+    .token-null { color: #a5b4fc; }
+    .token-punc { color: #cbd5e1; opacity: 0.9; }
+
+    .body pre {
+      margin: 0;
+      font-family: var(--mono);
+      font-size: 11px;
+      line-height: 1.35;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .context-menu {
+      position: fixed;
+      z-index: 1000;
+      background: #111827;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      min-width: 220px;
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
+      display: none;
+      overflow: hidden;
+    }
+
+    .context-menu button {
+      width: 100%;
+      border: 0;
+      background: transparent;
+      color: var(--text);
+      text-align: left;
+      padding: 9px 12px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+
+    .context-menu button:hover { background: #1f2937; }
+
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.55);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 1200;
+    }
+
+    .modal {
+      width: 420px;
+      max-width: calc(100vw - 24px);
+      background: #0f172a;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+    }
+
+    .modal h4 {
+      margin: 0;
+      padding: 10px 12px;
+      font-size: 13px;
+      border-bottom: 1px solid var(--border);
+      color: var(--text);
+    }
+
+    .modal-body {
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .select, .input {
+      width: 100%;
+      height: 34px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: #0b1220;
+      color: var(--text);
+      padding: 0 10px;
+      font-size: 12px;
+    }
+
+    .modal-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+
+    .hint { color: var(--muted); font-size: 11px; }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="title">APIK DevTools Intercept</div>
+    <div class="toolbar">
+      <input id="searchInput" class="search" placeholder="Search URL, body, headers, cookies, status..." />
+      <button id="clearSearchBtn" class="btn">Clear Search</button>
+      <button id="clearRowsBtn" class="btn">Clear</button>
+    </div>
+    <div class="status">
+      <span id="connDot" class="dot"></span>
+      <span id="connText">Disconnected</span>
+      <span id="counter">0 requests</span>
+    </div>
+  </div>
+
+  <div class="layout">
+    <div class="list">
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 74px">Method</th>
+            <th>Request</th>
+            <th style="width: 110px">Source</th>
+            <th style="width: 130px">Status</th>
+            <th style="width: 250px">Request Preview</th>
+            <th style="width: 250px">Response Preview</th>
+          </tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+      <div id="empty" class="empty">No intercepted request yet.</div>
+    </div>
+
+    <div id="horizontalSplitter" class="splitter splitter-horizontal" title="Drag to resize top/bottom panel"></div>
+
+    <div class="details">
+      <div class="card">
+        <div class="card-head">
+          <div class="card-title">Request Preview</div>
+        </div>
+        <div id="requestMeta" class="meta-bar">Select a request from the table.</div>
+        <div class="tabs">
+          <button id="reqTabBody" class="tab active">Body</button>
+          <button id="reqTabHeaders" class="tab">Headers</button>
+          <button id="reqTabCookies" class="tab">Cookies</button>
+          <div class="tabs-right">
+            <button id="reqCopyBtn" class="tab-btn">Copy</button>
+          </div>
+        </div>
+        <div id="requestDetail" class="detail-body"></div>
+      </div>
+
+      <div id="verticalSplitter" class="splitter splitter-vertical" title="Drag to resize request/response panel"></div>
+
+      <div class="card">
+        <div class="card-head">
+          <div class="card-title">Response Preview</div>
+        </div>
+        <div id="responseMeta" class="meta-bar">Response preview will appear here.</div>
+        <div class="tabs">
+          <button id="resTabBody" class="tab active">Body</button>
+          <button id="resTabHeaders" class="tab">Headers</button>
+          <button id="resTabCookies" class="tab">Cookies</button>
+          <div class="tabs-right">
+            <button id="resCopyBtn" class="tab-btn">Copy</button>
+          </div>
+        </div>
+        <div id="responseDetail" class="detail-body"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="contextMenu" class="context-menu">
+    <button id="addToCollectionBtn">Add To Collection</button>
+  </div>
+
+  <div id="collectionModalBackdrop" class="modal-backdrop">
+    <div class="modal">
+      <h4>Add Captured Request To Collection</h4>
+      <div class="modal-body">
+        <input id="requestNameInput" class="input" placeholder="Request name (optional)" />
+        <select id="collectionSelect" class="select"></select>
+        <input id="newCollectionInput" class="input" placeholder="Or create new collection name (optional)" />
+        <p class="hint">Choose existing collection, or type new collection name to create it.</p>
+        <div class="modal-actions">
+          <button id="cancelCollectionBtn" class="btn">Cancel</button>
+          <button id="confirmCollectionBtn" class="btn">Add</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="panel.js"></script>
+</body>
+</html>
