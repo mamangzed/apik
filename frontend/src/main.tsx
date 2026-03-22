@@ -46,22 +46,50 @@ class AppErrorBoundary extends React.Component<
   }
 }
 
-const clerkPublishableKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
+async function resolveClerkPublishableKey(): Promise<string> {
+  const fromBuild = String(import.meta.env.VITE_CLERK_PUBLISHABLE_KEY || '').trim();
+  if (fromBuild) {
+    return fromBuild;
+  }
 
-ReactDOM.createRoot(document.getElementById('root')!).render(
-  <React.StrictMode>
-    <AppErrorBoundary>
-      {clerkPublishableKey ? (
-        <ClerkProvider publishableKey={clerkPublishableKey}>
+  try {
+    const response = await fetch('/api/public/runtime-config', {
+      method: 'GET',
+      credentials: 'same-origin',
+    });
+    if (!response.ok) {
+      return '';
+    }
+
+    const payload = (await response.json()) as { clerkPublishableKey?: string };
+    return String(payload.clerkPublishableKey || '').trim();
+  } catch {
+    return '';
+  }
+}
+
+async function bootstrapApp() {
+  const clerkPublishableKey = await resolveClerkPublishableKey();
+
+  ReactDOM.createRoot(document.getElementById('root')!).render(
+    <React.StrictMode>
+      <AppErrorBoundary>
+        {clerkPublishableKey ? (
+          <ClerkProvider publishableKey={clerkPublishableKey}>
+            <BrowserRouter>
+              <App clerkEnabled />
+            </BrowserRouter>
+          </ClerkProvider>
+        ) : (
           <BrowserRouter>
-            <App clerkEnabled />
+            <App clerkEnabled={false} />
           </BrowserRouter>
-        </ClerkProvider>
-      ) : (
-        <BrowserRouter>
-          <App clerkEnabled={false} />
-        </BrowserRouter>
-      )}
-    </AppErrorBoundary>
-  </React.StrictMode>
-);
+        )}
+      </AppErrorBoundary>
+    </React.StrictMode>
+  );
+}
+
+bootstrapApp().catch((error) => {
+  console.error('[App] Failed to bootstrap:', error);
+});

@@ -3,6 +3,13 @@ import { getPublicCollectionByToken, getPublicDocsByToken } from '../storage/sup
 
 const router = Router();
 
+router.get('/runtime-config', (_req: Request, res: Response) => {
+  const clerkPublishableKey = String(process.env.CLERK_PUBLISHABLE_KEY || '').trim();
+  res.json({
+    clerkPublishableKey,
+  });
+});
+
 router.get('/collections/:token', async (req: Request, res: Response) => {
   const collection = await getPublicCollectionByToken(req.params.token);
   if (!collection) {
