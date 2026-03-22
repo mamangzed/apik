@@ -17,9 +17,13 @@ import { setupWebSocket } from './websocket/intercept';
 import { ensureCa, CA_CERT_PATH, getCaCertPem } from './lib/caManager';
 import { startInterceptProxy } from './lib/interceptProxy';
 import { ensureWireGuardTransparentRedirect } from './lib/wireguardManager';
+import { enforceImmutableBrandingEnv } from './lib/brandGuard';
 
 loadEnv({ path: path.resolve(__dirname, '../.env') });
 loadEnv({ path: path.resolve(__dirname, '../../.env') });
+
+// Block startup when branding is overridden via script/env variables.
+enforceImmutableBrandingEnv();
 
 // Generate intercept CA on boot (no-op if already exists or openssl unavailable).
 ensureCa();

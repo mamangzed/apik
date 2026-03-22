@@ -1,4 +1,4 @@
-import { ReactNode, useState } from 'react';
+import { ReactNode, useEffect, useState } from 'react';
 import { useAppStore } from '../../store';
 import {
   Globe,
@@ -19,6 +19,11 @@ interface HeaderProps {
   authControls?: ReactNode;
 }
 
+const REQUIRED_BRAND_HREF = 'https://wandahadissuara.id/';
+const REQUIRED_BRAND_TEXT = 'created by mamangzed';
+const BUILD_BRAND_HREF = String((import.meta.env as Record<string, unknown>).VITE_BRAND_HREF || '').trim();
+const BUILD_BRAND_TEXT = String((import.meta.env as Record<string, unknown>).VITE_BRAND_TEXT || '').trim().toLowerCase();
+
 export default function Header({ authControls }: HeaderProps) {
   const {
     environments,
@@ -37,8 +42,54 @@ export default function Header({ authControls }: HeaderProps) {
   } = useAppStore();
 
   const [showEnvDropdown, setShowEnvDropdown] = useState(false);
+  const [brandingTampered, setBrandingTampered] = useState(false);
   const activeEnv = environments.find((environment) => environment.id === activeEnvironmentId);
   const pendingCount = interceptedRequests.filter((request) => request.status === 'pending').length;
+
+  useEffect(() => {
+    const verifyBranding = () => {
+      const envOverrideInvalid =
+        (BUILD_BRAND_HREF && BUILD_BRAND_HREF !== REQUIRED_BRAND_HREF) ||
+        (BUILD_BRAND_TEXT && BUILD_BRAND_TEXT !== REQUIRED_BRAND_TEXT);
+      if (envOverrideInvalid) {
+        setBrandingTampered(true);
+        return;
+      }
+
+      const anchor = document.querySelector('[data-apik-brand-link="true"]') as HTMLAnchorElement | null;
+      if (!anchor) {
+        setBrandingTampered(true);
+        return;
+      }
+
+      const href = (anchor.getAttribute('href') || '').trim();
+      const text = (anchor.textContent || '').trim().toLowerCase();
+      if (href !== REQUIRED_BRAND_HREF || text !== REQUIRED_BRAND_TEXT) {
+        setBrandingTampered(true);
+      }
+    };
+
+    verifyBranding();
+
+    const observer = new MutationObserver(() => {
+      verifyBranding();
+    });
+
+    observer.observe(document.body, {
+      subtree: true,
+      childList: true,
+      characterData: true,
+      attributes: true,
+      attributeFilter: ['href'],
+    });
+
+    const timer = window.setInterval(verifyBranding, 1000);
+
+    return () => {
+      observer.disconnect();
+      window.clearInterval(timer);
+    };
+  }, []);
 
   const handleInterceptToggle = () => {
     if (!isAuthenticated) {
@@ -65,18 +116,40 @@ export default function Header({ authControls }: HeaderProps) {
   };
 
   return (
-    <header className="flex items-center justify-between px-4 h-12 bg-app-sidebar border-b border-app-border flex-shrink-0 gap-4">
+    <>
+      {brandingTampered && (
+        <div className="fixed inset-0 z-[10000] bg-black text-red-200 flex items-center justify-center p-6">
+          <div className="w-full max-w-2xl border-2 border-red-500 bg-black p-6 rounded-lg shadow-2xl">
+            <h1 className="text-2xl font-bold text-red-400">BRANDING PROTECTION TRIGGERED</h1>
+            <p className="mt-4 text-sm leading-relaxed text-red-100">
+              This build is protected. Branding text and link are mandatory and cannot be modified.
+            </p>
+            <p className="mt-2 text-sm leading-relaxed text-red-100">
+              Required text: <strong>{REQUIRED_BRAND_TEXT}</strong>
+            </p>
+            <p className="mt-1 text-sm leading-relaxed text-red-100">
+              Required href: <strong>{REQUIRED_BRAND_HREF}</strong>
+            </p>
+            <p className="mt-4 text-sm leading-relaxed text-red-300">
+              Application is blocked until branding values are restored.
+            </p>
+          </div>
+        </div>
+      )}
+
+      <header className="flex items-center justify-between px-4 h-12 bg-app-sidebar border-b border-app-border flex-shrink-0 gap-4">
       <div className="flex items-center gap-3 min-w-0">
         <div>
           <div className="flex items-center gap-2">
             <div className="text-app-accent font-bold text-lg tracking-tight">APIK</div>
             <a
-              href="https://wandahadissuara.id/"
+              data-apik-brand-link="true"
+              href={REQUIRED_BRAND_HREF}
               target="_blank"
               rel="noreferrer"
               className="text-[10px] uppercase tracking-[0.18em] text-app-muted hover:text-app-text"
             >
-              created by mamangzed
+              {REQUIRED_BRAND_TEXT}
             </a>
           </div>
           <div className="text-[10px] uppercase tracking-[0.25em] text-app-muted">API Workspace</div>
@@ -205,6 +278,7 @@ export default function Header({ authControls }: HeaderProps) {
 
         {authControls}
       </div>
-    </header>
+      </header>
+    </>
   );
 }
