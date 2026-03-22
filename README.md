@@ -1,3 +1,8 @@
+## Support the Project
+
+[![Ko-fi](https://img.shields.io/badge/Ko--fi-Support%20Me-ff5e5b?logo=ko-fi&logoColor=white)](https://ko-fi.com/mamangzed)
+[![Saweria](https://img.shields.io/badge/Saweria-Dukung%20Saya-f97316?logo=buymeacoffee&logoColor=white)](https://saweria.co/zedkntl)
+
 # APIK - Web-Based API Client and Interceptor
 
 A modern API client inspired by Bruno, with request interception, environment variables, API documentation, and browser extension support.
