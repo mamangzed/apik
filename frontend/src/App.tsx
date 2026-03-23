@@ -611,26 +611,26 @@ function ClerkShell() {
         if (!cancelled && !isSignedIn) {
           publishExtensionAuthToken(null);
         }
-        className="group flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 rounded-xl border border-app-border bg-app-secondary px-4 py-3 hover:border-app-accent transition-colors"
+      }
     };
 
     pushTokenToExtension();
     const timer = window.setInterval(pushTokenToExtension, 15_000);
     const onWindowFocus = () => {
-        <img src={DONATION_BADGES.kofi} alt="Ko-fi logo" className="h-7 self-start sm:self-auto" />
+      void pushTokenToExtension();
     };
     const onVisibilityChange = () => {
       if (!document.hidden) {
         void pushTokenToExtension();
       }
     };
-        className="group flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 rounded-xl border border-app-border bg-app-secondary px-4 py-3 hover:border-[#f97316] transition-colors"
+    window.addEventListener('focus', onWindowFocus);
     document.addEventListener('visibilitychange', onVisibilityChange);
 
     return () => {
       cancelled = true;
       window.clearInterval(timer);
-        <img src={DONATION_BADGES.saweria} alt="Saweria logo" className="h-7 self-start sm:self-auto" />
+      window.removeEventListener('focus', onWindowFocus);
       document.removeEventListener('visibilitychange', onVisibilityChange);
     };
   }, [getToken, isLoaded, isSignedIn]);
