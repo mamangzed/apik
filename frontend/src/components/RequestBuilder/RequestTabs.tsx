@@ -75,7 +75,7 @@ export default function RequestTabs() {
                 setActiveTab(t.id);
                 if (!SEARCHABLE_TABS.includes(t.id)) closeSearch();
               }}
-              className={`tab-btn flex items-center gap-1.5 flex-shrink-0 ${activeTab === t.id ? 'active' : ''}`}
+              className={`tab-btn !text-[11px] sm:!text-sm flex items-center gap-1.5 flex-shrink-0 ${activeTab === t.id ? 'active' : ''}`}
             >
               {t.label}
               {badge > 0 && (
@@ -111,10 +111,10 @@ export default function RequestTabs() {
             value={searchFilter}
             onChange={(e) => setSearchFilter(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Escape') closeSearch(); }}
-            className="flex-1 bg-transparent text-sm focus:outline-none text-app-text placeholder-app-muted"
+            className="flex-1 bg-transparent text-[12px] sm:text-sm focus:outline-none text-app-text placeholder-app-muted"
           />
           {searchFilter && (
-            <span className="text-xs text-app-muted flex-shrink-0">
+            <span className="text-[11px] sm:text-xs text-app-muted flex-shrink-0">
               {activeTab === 'params'
                 ? req.params.filter(p => p.key.toLowerCase().includes(searchFilter.toLowerCase()) || p.value.toLowerCase().includes(searchFilter.toLowerCase())).length
                 : req.headers.filter(h => h.key.toLowerCase().includes(searchFilter.toLowerCase()) || h.value.toLowerCase().includes(searchFilter.toLowerCase())).length

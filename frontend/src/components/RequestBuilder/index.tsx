@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { PanelGroup, Panel, PanelResizeHandle } from 'react-resizable-panels';
 import { useAppStore } from '../../store';
 import UrlBar from './UrlBar';
@@ -6,8 +7,31 @@ import ResponseViewer from '../ResponseViewer';
 
 export default function RequestPanel() {
   const { activeTabId } = useAppStore();
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768);
+
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
 
   if (!activeTabId) return null;
+
+  if (isMobile) {
+    return (
+      <div className="flex flex-col flex-1 overflow-hidden min-h-0">
+        <UrlBar />
+        <div className="flex-1 min-h-0 flex flex-col">
+          <div className="min-h-0 flex-[1_1_56%] border-b border-app-border">
+            <RequestTabs />
+          </div>
+          <div className="min-h-0 flex-[1_1_44%]">
+            <ResponseViewer />
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col flex-1 overflow-hidden">

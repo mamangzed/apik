@@ -161,7 +161,7 @@ export default function Header({
         )}
         <div>
           <div className="flex items-center gap-2">
-            <div className="text-app-accent font-bold text-lg tracking-tight">APIK</div>
+            <div className="text-app-accent font-bold text-base sm:text-lg tracking-tight">APIK</div>
             <a
               data-apik-brand-link="true"
               href={REQUIRED_BRAND_HREF}
@@ -185,7 +185,7 @@ export default function Header({
 
         <button
           onClick={openNewTab}
-          className="flex items-center gap-1.5 text-xs sm:text-sm text-app-muted hover:text-app-text hover:bg-app-hover px-2 sm:px-3 py-1.5 rounded transition-colors"
+          className="w-full sm:w-auto justify-center sm:justify-start flex items-center gap-1.5 text-[11px] sm:text-sm text-app-muted hover:text-app-text hover:bg-app-hover px-2 sm:px-3 py-1.5 rounded transition-colors"
         >
           <Plus size={14} />
           <span className="hidden sm:inline">New Request</span>
@@ -194,7 +194,7 @@ export default function Header({
 
       </div>
 
-      <div className="flex items-center gap-1 sm:gap-2 ml-auto sm:ml-0 min-w-0 flex-wrap justify-end order-2 sm:order-none">
+      <div className="flex items-center gap-1 sm:gap-2 ml-auto sm:ml-0 min-w-0 flex-wrap justify-end order-2 sm:order-none w-full sm:w-auto">
         <div className="hidden md:flex items-center gap-1.5 text-xs text-app-muted">
           {wsConnected ? (
             <span className="flex items-center gap-1 text-green-400">
@@ -212,7 +212,7 @@ export default function Header({
         <button
           onClick={handleInterceptToggle}
           disabled={!isAuthenticated}
-          className={`flex items-center gap-1 px-2 sm:px-3 py-1.5 rounded text-xs font-medium transition-colors ${
+          className={`flex items-center gap-1 px-2 sm:px-3 py-1.5 rounded text-[11px] sm:text-xs font-medium transition-colors ${
             interceptEnabled
               ? 'bg-orange-900/50 text-orange-300 border border-orange-700 hover:bg-orange-900/70'
               : 'text-app-muted hover:text-app-text hover:bg-app-hover border border-transparent'
@@ -236,17 +236,17 @@ export default function Header({
 
         <button
           onClick={handleDownloadExtension}
-          className="flex items-center gap-1.5 px-2 sm:px-3 py-1.5 rounded text-xs font-medium text-app-muted hover:text-app-text hover:bg-app-hover border border-transparent transition-colors max-[420px]:hidden"
+          className="flex items-center gap-1.5 px-2 sm:px-3 py-1.5 rounded text-[11px] sm:text-xs font-medium text-app-muted hover:text-app-text hover:bg-app-hover border border-transparent transition-colors max-[420px]:hidden"
           title="Download browser extension"
         >
           <Download size={13} />
           <span className="hidden sm:inline">Extension</span>
         </button>
 
-        <div className="relative">
+        <div className="relative max-[420px]:hidden">
           <button
             onClick={() => setShowEnvDropdown((value) => !value)}
-            className="flex items-center gap-1.5 px-2 sm:px-3 py-1.5 bg-app-panel border border-app-border rounded text-xs sm:text-sm text-app-text hover:border-app-accent transition-colors"
+            className="flex items-center gap-1.5 px-2 sm:px-3 py-1.5 bg-app-panel border border-app-border rounded text-[11px] sm:text-sm text-app-text hover:border-app-accent transition-colors"
           >
             <Globe size={13} className="text-app-muted" />
             <span className="max-w-12 sm:max-w-28 truncate">{activeEnv?.name ?? 'No Environment'}</span>
@@ -297,7 +297,7 @@ export default function Header({
           )}
         </div>
 
-        <div className="flex-shrink-0">{authControls}</div>
+        <div className="flex-shrink-0 ml-auto">{authControls}</div>
       </div>
       </header>
     </>

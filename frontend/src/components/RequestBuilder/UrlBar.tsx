@@ -122,7 +122,7 @@ export default function UrlBar() {
         <div className="relative flex-shrink-0">
           <button
             onClick={() => setShowMethodDropdown((v) => !v)}
-            className={`flex items-center gap-1 px-3 py-1.5 rounded text-xs font-bold font-mono w-[86px] justify-between ${
+            className={`flex items-center gap-1 px-3 py-1.5 rounded text-[11px] sm:text-xs font-bold font-mono w-[86px] justify-between ${
               METHOD_BG_COLORS[req.method] || 'bg-app-panel text-app-muted'
             }`}
           >
@@ -153,7 +153,7 @@ export default function UrlBar() {
         <div className="relative flex-1 min-w-0">
           <div
             ref={overlayRef}
-            className="pointer-events-none absolute inset-0 overflow-hidden bg-app-panel border border-app-border rounded px-3 py-1.5 text-sm font-mono whitespace-pre"
+            className="pointer-events-none absolute inset-0 overflow-hidden bg-app-panel border border-app-border rounded px-3 py-1.5 text-[12px] sm:text-sm font-mono whitespace-pre"
             aria-hidden="true"
           >
             {highlightedUrl}
@@ -169,7 +169,7 @@ export default function UrlBar() {
                 overlayRef.current.scrollLeft = e.currentTarget.scrollLeft;
               }
             }}
-            className="relative z-10 w-full bg-transparent border border-app-border rounded px-3 py-1.5 text-sm font-mono text-transparent caret-app-text focus:outline-none focus:border-app-accent transition-colors"
+            className="relative z-10 w-full bg-transparent border border-app-border rounded px-3 py-1.5 text-[12px] sm:text-sm font-mono text-transparent caret-app-text focus:outline-none focus:border-app-accent transition-colors"
             spellCheck={false}
           />
         </div>
@@ -178,7 +178,7 @@ export default function UrlBar() {
         <button
           onClick={handleSend}
           disabled={isLoading}
-          className="flex items-center gap-1.5 bg-app-accent hover:bg-app-accent-hover disabled:opacity-60 text-white text-sm font-medium px-3 sm:px-4 py-1.5 rounded transition-colors min-w-[72px] sm:min-w-20 justify-center flex-shrink-0"
+          className="flex items-center gap-1.5 bg-app-accent hover:bg-app-accent-hover disabled:opacity-60 text-[12px] sm:text-sm font-medium px-3 sm:px-4 py-1.5 rounded transition-colors min-w-[72px] sm:min-w-20 justify-center flex-shrink-0"
           title="Send request (Ctrl+Enter)"
         >
           {isLoading ? (
@@ -197,13 +197,13 @@ export default function UrlBar() {
           value={req.name}
           onChange={(e) => updateActiveRequest({ name: e.target.value })}
           placeholder="Request name"
-          className="flex-1 sm:flex-none sm:w-44 bg-transparent border border-app-border rounded px-2 py-1.5 text-sm text-app-muted focus:outline-none focus:border-app-accent transition-colors min-w-0"
+          className="flex-1 sm:flex-none sm:w-44 bg-transparent border border-app-border rounded px-2 py-1.5 text-[12px] sm:text-sm text-app-muted focus:outline-none focus:border-app-accent transition-colors min-w-0"
         />
 
         {/* Save */}
         <button
           onClick={handleSave}
-          className="flex items-center gap-1.5 px-2.5 py-1.5 text-sm text-app-muted hover:text-app-text hover:bg-app-hover border border-app-border rounded transition-colors flex-shrink-0"
+          className="flex items-center gap-1.5 px-2.5 py-1.5 text-[12px] sm:text-sm text-app-muted hover:text-app-text hover:bg-app-hover border border-app-border rounded transition-colors flex-shrink-0"
           title="Save request (Ctrl+S)"
         >
           <Save size={14} />

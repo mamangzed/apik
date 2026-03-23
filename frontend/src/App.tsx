@@ -494,17 +494,17 @@ function AppShell({ authControls, autoLoad = true }: { authControls: ReactNode; 
             aria-labelledby="donation-modal-title"
             className={`w-full max-w-lg overflow-hidden rounded-2xl border border-app-border bg-app-panel shadow-2xl transition-all duration-200 ${donationModalEntered ? 'translate-y-0 scale-100' : 'translate-y-2 scale-[0.98]'}`}
           >
-            <div className="bg-gradient-to-r from-app-accent/20 via-transparent to-[#f97316]/20 px-6 py-5 border-b border-app-border">
-              <p className="text-[11px] tracking-[0.16em] uppercase text-app-muted">Open Source Support</p>
-              <h2 id="donation-modal-title" className="mt-1 text-xl font-semibold text-app-text">
+            <div className="bg-gradient-to-r from-app-accent/20 via-transparent to-[#f97316]/20 px-5 sm:px-6 py-5 border-b border-app-border">
+              <p className="text-[10px] sm:text-[11px] tracking-[0.16em] uppercase text-app-muted">Open Source Support</p>
+              <h2 id="donation-modal-title" className="mt-1 text-lg sm:text-xl font-semibold text-app-text">
                 Keep APIK Free for Everyone
               </h2>
-              <p className="mt-2 text-sm text-app-muted">
+              <p className="mt-2 text-[12px] sm:text-sm text-app-muted">
                 Thanks for using APIK. Your support helps maintain updates, fixes, and new features for the open source community.
               </p>
             </div>
 
-            <div className="px-6 py-5 space-y-3">
+            <div className="px-5 sm:px-6 py-5 space-y-3">
               <a
                 href={DONATION_LINKS.kofi}
                 target="_blank"
@@ -512,8 +512,8 @@ function AppShell({ authControls, autoLoad = true }: { authControls: ReactNode; 
                 className="group flex items-center justify-between rounded-xl border border-app-border bg-app-secondary px-4 py-3 hover:border-app-accent transition-colors"
               >
                 <div>
-                  <p className="text-sm font-medium text-app-text">Donate via Ko-fi</p>
-                  <p className="text-xs text-app-muted">Quick one-time support</p>
+                  <p className="text-[13px] sm:text-sm font-medium text-app-text">Donate via Ko-fi</p>
+                  <p className="text-[11px] sm:text-xs text-app-muted">Quick one-time support</p>
                 </div>
                 <img src={DONATION_BADGES.kofi} alt="Ko-fi logo" className="h-7" />
               </a>
@@ -525,15 +525,15 @@ function AppShell({ authControls, autoLoad = true }: { authControls: ReactNode; 
                 className="group flex items-center justify-between rounded-xl border border-app-border bg-app-secondary px-4 py-3 hover:border-[#f97316] transition-colors"
               >
                 <div>
-                  <p className="text-sm font-medium text-app-text">Donate via Saweria</p>
-                  <p className="text-xs text-app-muted">Support in local payment methods</p>
+                  <p className="text-[13px] sm:text-sm font-medium text-app-text">Donate via Saweria</p>
+                  <p className="text-[11px] sm:text-xs text-app-muted">Support in local payment methods</p>
                 </div>
                 <img src={DONATION_BADGES.saweria} alt="Saweria logo" className="h-7" />
               </a>
             </div>
 
-            <div className="flex items-center justify-between border-t border-app-border bg-app-secondary/40 px-6 py-4">
-              <button type="button" className="btn-primary" onClick={() => setShowDonationModal(false)}>
+            <div className="flex items-center justify-end border-t border-app-border bg-app-secondary/40 px-5 sm:px-6 py-4">
+              <button type="button" className="btn-primary text-[12px] sm:text-sm" onClick={() => setShowDonationModal(false)}>
                 Continue to App
               </button>
             </div>
@@ -561,8 +561,8 @@ function ClerkControls() {
   if (!isSignedIn) {
     return (
       <div className="flex items-center gap-1 sm:gap-2">
-        <Link to="/sign-in" className="btn-ghost text-[10px] sm:text-xs px-1.5 sm:px-2.5 py-1">Sign in</Link>
-        <Link to="/sign-up" className="btn-primary text-[10px] sm:text-xs py-1 px-2 sm:px-3">Sign up</Link>
+          <Link to="/sign-in" className="btn-ghost text-[10px] sm:text-xs px-1.5 sm:px-2.5 py-1 max-[420px]:hidden">Sign in</Link>
+          <Link to="/sign-up" className="btn-primary text-[10px] sm:text-xs py-1 px-2 sm:px-3">Join</Link>
       </div>
     );
   }
@@ -611,26 +611,26 @@ function ClerkShell() {
         if (!cancelled && !isSignedIn) {
           publishExtensionAuthToken(null);
         }
-      }
+        className="group flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 rounded-xl border border-app-border bg-app-secondary px-4 py-3 hover:border-app-accent transition-colors"
     };
 
     pushTokenToExtension();
     const timer = window.setInterval(pushTokenToExtension, 15_000);
     const onWindowFocus = () => {
-      void pushTokenToExtension();
+        <img src={DONATION_BADGES.kofi} alt="Ko-fi logo" className="h-7 self-start sm:self-auto" />
     };
     const onVisibilityChange = () => {
       if (!document.hidden) {
         void pushTokenToExtension();
       }
     };
-    window.addEventListener('focus', onWindowFocus);
+        className="group flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 rounded-xl border border-app-border bg-app-secondary px-4 py-3 hover:border-[#f97316] transition-colors"
     document.addEventListener('visibilitychange', onVisibilityChange);
 
     return () => {
       cancelled = true;
       window.clearInterval(timer);
-      window.removeEventListener('focus', onWindowFocus);
+        <img src={DONATION_BADGES.saweria} alt="Saweria logo" className="h-7 self-start sm:self-auto" />
       document.removeEventListener('visibilitychange', onVisibilityChange);
     };
   }, [getToken, isLoaded, isSignedIn]);
