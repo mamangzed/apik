@@ -443,112 +443,113 @@ export default function PublicCollectionPage() {
                         <div className="flex items-center gap-4 overflow-x-auto">
                           {EDIT_TABS.map((tab) => (
                             <button
-                              {currentEditTab === 'params' && (
-                                <div className="space-y-2">
-                                  <div className="overflow-x-auto">
-                                    <div className="min-w-[640px] space-y-2">
-                                      <div className="grid grid-cols-[24px_1fr_1fr_1fr_42px] gap-2 text-[11px] text-app-muted uppercase tracking-wider px-1">
-                                        <div />
-                                        <div>Key</div>
-                                        <div>Value</div>
-                                        <div>Description</div>
-                                        <div />
-                                      </div>
-                                      {effectiveRequest.params.map((param) => (
-                                        <div key={param.id} className="grid grid-cols-[24px_1fr_1fr_1fr_42px] gap-2 items-center">
-                                          <input
-                                            type="checkbox"
-                                            checked={param.enabled}
-                                            onChange={(event) => updateKeyValueDraft(request, 'params', param.id, { enabled: event.target.checked })}
-                                            className="w-3.5 h-3.5 accent-orange-500"
-                                          />
-                                          <input
-                                            value={param.key}
-                                            onChange={(event) => updateKeyValueDraft(request, 'params', param.id, { key: event.target.value })}
-                                            className="input-field text-xs font-mono"
-                                          />
-                                          <input
-                                            value={param.value}
-                                            onChange={(event) => updateKeyValueDraft(request, 'params', param.id, { value: event.target.value })}
-                                            className="input-field text-xs font-mono"
-                                          />
-                                          <input
-                                            value={param.description || ''}
-                                            onChange={(event) => updateKeyValueDraft(request, 'params', param.id, { description: event.target.value })}
-                                            className="input-field text-xs"
-                                          />
-                                          <button onClick={() => removeKeyValueDraftRow(request, 'params', param.id)} className="btn-ghost p-1.5" title="Remove parameter">
-                                            <Trash2 size={12} />
-                                          </button>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  </div>
-                                  <button onClick={() => addKeyValueDraftRow(request, 'params')} className="btn-ghost text-xs inline-flex items-center gap-1.5">
-                                    <Plus size={12} /> Add parameter
-                                  </button>
-                                </div>
-                              )}
+                              key={tab}
+                              onClick={() => setActiveEditTab((previous) => ({ ...previous, [request.id]: tab }))}
+                              className={`text-xs py-1.5 border-b-2 capitalize whitespace-nowrap ${
+                                currentEditTab === tab
+                                  ? 'border-app-accent text-app-text'
+                                  : 'border-transparent text-app-muted hover:text-app-text'
+                              }`}
+                            >
+                              {tab}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
 
-                              {currentEditTab === 'headers' && (
-                                <div className="space-y-2">
-                                  <div className="overflow-x-auto">
-                                    <div className="min-w-[640px] space-y-2">
-                                      <div className="grid grid-cols-[24px_1fr_1fr_1fr_42px] gap-2 text-[11px] text-app-muted uppercase tracking-wider px-1">
-                                        <div />
-                                        <div>Key</div>
-                                        <div>Value</div>
-                                        <div>Description</div>
-                                        <div />
-                                      </div>
-                                      {effectiveRequest.headers.map((header) => (
-                                        <div key={header.id} className="grid grid-cols-[24px_1fr_1fr_1fr_42px] gap-2 items-center">
-                                          <input
-                                            type="checkbox"
-                                            checked={header.enabled}
-                                            onChange={(event) => updateKeyValueDraft(request, 'headers', header.id, { enabled: event.target.checked })}
-                                            className="w-3.5 h-3.5 accent-orange-500"
-                                          />
-                                          <input
-                                            value={header.key}
-                                            onChange={(event) => updateKeyValueDraft(request, 'headers', header.id, { key: event.target.value })}
-                                            className="input-field text-xs font-mono"
-                                          />
-                                          <input
-                                            value={header.value}
-                                            onChange={(event) => updateKeyValueDraft(request, 'headers', header.id, { value: event.target.value })}
-                                            className="input-field text-xs font-mono"
-                                          />
-                                          <input
-                                            value={header.description || ''}
-                                            onChange={(event) => updateKeyValueDraft(request, 'headers', header.id, { description: event.target.value })}
-                                            className="input-field text-xs"
-                                          />
-                                          <button onClick={() => removeKeyValueDraftRow(request, 'headers', header.id)} className="btn-ghost p-1.5" title="Remove header">
-                                            <Trash2 size={12} />
-                                          </button>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  </div>
-                                  <button onClick={() => addKeyValueDraftRow(request, 'headers')} className="btn-ghost text-xs inline-flex items-center gap-1.5">
-                                    <Plus size={12} /> Add header
-                                  </button>
+                      <div className="p-3 space-y-3">
+                        <p className="text-xs text-app-muted">
+                          Edit here only affects this session and will not save to the original shared collection.
+                        </p>
+
+                        {currentEditTab === 'params' && (
+                          <div className="space-y-2">
+                            <div className="overflow-x-auto">
+                              <div className="min-w-[640px] space-y-2">
+                                <div className="grid grid-cols-[24px_1fr_1fr_1fr_42px] gap-2 text-[11px] text-app-muted uppercase tracking-wider px-1">
+                                  <div />
+                                  <div>Key</div>
+                                  <div>Value</div>
+                                  <div>Description</div>
+                                  <div />
                                 </div>
-                              )}
-                                  onChange={(event) => updateKeyValueDraft(request, 'headers', header.id, { value: event.target.value })}
-                                  className="input-field text-xs font-mono"
-                                />
-                                <input
-                                  value={header.description || ''}
-                                  onChange={(event) => updateKeyValueDraft(request, 'headers', header.id, { description: event.target.value })}
-                                  className="input-field text-xs"
-                                />
-                                <button onClick={() => removeKeyValueDraftRow(request, 'headers', header.id)} className="btn-ghost p-1.5" title="Remove header">
-                                  <Trash2 size={12} />
-                                </button>
+                                {effectiveRequest.params.map((param) => (
+                                  <div key={param.id} className="grid grid-cols-[24px_1fr_1fr_1fr_42px] gap-2 items-center">
+                                    <input
+                                      type="checkbox"
+                                      checked={param.enabled}
+                                      onChange={(event) => updateKeyValueDraft(request, 'params', param.id, { enabled: event.target.checked })}
+                                      className="w-3.5 h-3.5 accent-orange-500"
+                                    />
+                                    <input
+                                      value={param.key}
+                                      onChange={(event) => updateKeyValueDraft(request, 'params', param.id, { key: event.target.value })}
+                                      className="input-field text-xs font-mono"
+                                    />
+                                    <input
+                                      value={param.value}
+                                      onChange={(event) => updateKeyValueDraft(request, 'params', param.id, { value: event.target.value })}
+                                      className="input-field text-xs font-mono"
+                                    />
+                                    <input
+                                      value={param.description || ''}
+                                      onChange={(event) => updateKeyValueDraft(request, 'params', param.id, { description: event.target.value })}
+                                      className="input-field text-xs"
+                                    />
+                                    <button onClick={() => removeKeyValueDraftRow(request, 'params', param.id)} className="btn-ghost p-1.5" title="Remove parameter">
+                                      <Trash2 size={12} />
+                                    </button>
+                                  </div>
+                                ))}
                               </div>
-                            ))}
+                            </div>
+                            <button onClick={() => addKeyValueDraftRow(request, 'params')} className="btn-ghost text-xs inline-flex items-center gap-1.5">
+                              <Plus size={12} /> Add parameter
+                            </button>
+                          </div>
+                        )}
+
+                        {currentEditTab === 'headers' && (
+                          <div className="space-y-2">
+                            <div className="overflow-x-auto">
+                              <div className="min-w-[640px] space-y-2">
+                                <div className="grid grid-cols-[24px_1fr_1fr_1fr_42px] gap-2 text-[11px] text-app-muted uppercase tracking-wider px-1">
+                                  <div />
+                                  <div>Key</div>
+                                  <div>Value</div>
+                                  <div>Description</div>
+                                  <div />
+                                </div>
+                                {effectiveRequest.headers.map((header) => (
+                                  <div key={header.id} className="grid grid-cols-[24px_1fr_1fr_1fr_42px] gap-2 items-center">
+                                    <input
+                                      type="checkbox"
+                                      checked={header.enabled}
+                                      onChange={(event) => updateKeyValueDraft(request, 'headers', header.id, { enabled: event.target.checked })}
+                                      className="w-3.5 h-3.5 accent-orange-500"
+                                    />
+                                    <input
+                                      value={header.key}
+                                      onChange={(event) => updateKeyValueDraft(request, 'headers', header.id, { key: event.target.value })}
+                                      className="input-field text-xs font-mono"
+                                    />
+                                    <input
+                                      value={header.value}
+                                      onChange={(event) => updateKeyValueDraft(request, 'headers', header.id, { value: event.target.value })}
+                                      className="input-field text-xs font-mono"
+                                    />
+                                    <input
+                                      value={header.description || ''}
+                                      onChange={(event) => updateKeyValueDraft(request, 'headers', header.id, { description: event.target.value })}
+                                      className="input-field text-xs"
+                                    />
+                                    <button onClick={() => removeKeyValueDraftRow(request, 'headers', header.id)} className="btn-ghost p-1.5" title="Remove header">
+                                      <Trash2 size={12} />
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
                             <button onClick={() => addKeyValueDraftRow(request, 'headers')} className="btn-ghost text-xs inline-flex items-center gap-1.5">
                               <Plus size={12} /> Add header
                             </button>
