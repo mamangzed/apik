@@ -36,6 +36,7 @@ WIREGUARD_TRANSPARENT_INTERCEPT="${WIREGUARD_TRANSPARENT_INTERCEPT:-false}"
 WIREGUARD_TRANSPARENT_PORT="${WIREGUARD_TRANSPARENT_PORT:-18080}"
 APT_LOCK_WAIT_SECONDS="${APT_LOCK_WAIT_SECONDS:-300}"
 SERVICE_NAME="apik-backend"
+NGINX_WEB_ROOT="/var/www/apik"
 CF_ORIGIN_CERT_DIR="/etc/ssl/cloudflare-origin"
 CF_ZONE_NAME=""
 PROXY_HOST=""
@@ -943,6 +944,24 @@ npm --prefix "$APP_DIR/backend" install
 npm --prefix "$APP_DIR/frontend" install
 npm --prefix "$APP_DIR" run build
 
+echo "[4b/12] Publishing frontend build for Nginx..."
+install -d -m 755 "$NGINX_WEB_ROOT"
+if [ ! -f "$APP_DIR/frontend/dist/index.html" ]; then
+  echo "Frontend build output not found: $APP_DIR/frontend/dist/index.html"
+  echo "Build may have failed or output path changed."
+  exit 1
+fi
+
+if command -v rsync >/dev/null 2>&1; then
+  rsync -a --delete "$APP_DIR/frontend/dist/" "$NGINX_WEB_ROOT/"
+else
+  rm -rf "$NGINX_WEB_ROOT"/*
+  cp -a "$APP_DIR/frontend/dist/." "$NGINX_WEB_ROOT/"
+fi
+
+chown -R www-data:www-data "$NGINX_WEB_ROOT"
+chmod -R a+rX "$NGINX_WEB_ROOT"
+
 echo "[5/12] Creating systemd service for backend..."
 cat >/etc/systemd/system/${SERVICE_NAME}.service <<EOF
 [Unit]
@@ -1080,11 +1099,8 @@ server {
   }
 
   location / {
-    proxy_pass http://127.0.0.1:${BACKEND_PORT};
-    proxy_http_version 1.1;
-    proxy_set_header Host \$host;
-    proxy_set_header X-Forwarded-Proto \$scheme;
-    proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+    root ${NGINX_WEB_ROOT};
+    try_files \$uri \$uri/ /index.html;
   }
 }
 EOF

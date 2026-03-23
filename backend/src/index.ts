@@ -43,6 +43,7 @@ const PORT = process.env.PORT || 2611;
 const HOST = process.env.HOST || '0.0.0.0';
 const isProduction = process.env.NODE_ENV === 'production';
 const frontendDist = path.resolve(__dirname, '../../frontend/dist');
+const hasFrontendDist = fs.existsSync(frontendDist);
 const clerkConfigured = Boolean(process.env.CLERK_SECRET_KEY || process.env.CLERK_PUBLISHABLE_KEY);
 
 // Middleware
@@ -116,7 +117,7 @@ app.use((err: unknown, _req: express.Request, res: express.Response, _next: expr
   }
 });
 
-if (isProduction && fs.existsSync(frontendDist)) {
+if (hasFrontendDist) {
   app.use(express.static(frontendDist));
   app.get('*', (req, res, next) => {
     if (req.path.startsWith('/api') || req.path.startsWith('/ws')) {
@@ -140,7 +141,7 @@ server.listen(Number(PORT), HOST, () => {
   console.log(`Listening on ${HOST}:${PORT}`);
   console.log(`WebSocket intercept: ws://${displayHost}:${PORT}/ws/intercept`);
   console.log(`Storage: Supabase`);
-  if (isProduction && fs.existsSync(frontendDist)) {
+  if (hasFrontendDist) {
     console.log(`Frontend: serving ${frontendDist}`);
   }
   console.log('');
