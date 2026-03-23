@@ -533,9 +533,8 @@ function AppShell({ authControls, autoLoad = true }: { authControls: ReactNode; 
             </div>
 
             <div className="flex items-center justify-between border-t border-app-border bg-app-secondary/40 px-6 py-4">
-              <span className="text-xs text-app-muted">Modal ini muncul saat aplikasi di-refresh. Tekan Esc untuk menutup.</span>
               <button type="button" className="btn-primary" onClick={() => setShowDonationModal(false)}>
-                Masuk Aplikasi
+                Continue to App
               </button>
             </div>
           </div>
@@ -561,9 +560,9 @@ function ClerkControls() {
 
   if (!isSignedIn) {
     return (
-      <div className="flex items-center gap-2">
-        <Link to="/sign-in" className="btn-ghost text-xs">Login</Link>
-        <Link to="/sign-up" className="btn-primary text-xs py-1">Register</Link>
+      <div className="flex items-center gap-1 sm:gap-2">
+        <Link to="/sign-in" className="btn-ghost text-[10px] sm:text-xs px-1.5 sm:px-2.5 py-1">Sign in</Link>
+        <Link to="/sign-up" className="btn-primary text-[10px] sm:text-xs py-1 px-2 sm:px-3">Sign up</Link>
       </div>
     );
   }

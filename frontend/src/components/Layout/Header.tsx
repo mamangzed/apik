@@ -177,7 +177,7 @@ export default function Header({
         <span className="hidden sm:inline text-app-muted text-xs bg-app-active px-1.5 py-0.5 rounded">v{__APP_VERSION__}</span>
       </div>
 
-      <div className="flex items-center gap-1 sm:gap-2 min-w-0">
+      <div className="flex items-center gap-1 sm:gap-2 min-w-0 order-3 sm:order-none w-full sm:w-auto">
         <div className="hidden md:flex items-center gap-2 px-2.5 py-1 rounded border border-app-border bg-app-panel text-xs text-app-muted">
           {storageMode === 'remote' ? <Cloud size={12} /> : <HardDrive size={12} />}
           {storageMode === 'remote' ? 'Cloud sync' : 'Local storage'}
@@ -189,12 +189,12 @@ export default function Header({
         >
           <Plus size={14} />
           <span className="hidden sm:inline">New Request</span>
-          <span className="sm:hidden">New</span>
+          <span className="sm:hidden max-[420px]:hidden">New</span>
         </button>
 
       </div>
 
-      <div className="flex items-center gap-1 sm:gap-2 ml-auto sm:ml-0">
+      <div className="flex items-center gap-1 sm:gap-2 ml-auto sm:ml-0 min-w-0 flex-wrap justify-end order-2 sm:order-none">
         <div className="hidden md:flex items-center gap-1.5 text-xs text-app-muted">
           {wsConnected ? (
             <span className="flex items-center gap-1 text-green-400">
@@ -212,7 +212,7 @@ export default function Header({
         <button
           onClick={handleInterceptToggle}
           disabled={!isAuthenticated}
-          className={`flex items-center gap-1.5 px-2 sm:px-3 py-1.5 rounded text-xs font-medium transition-colors ${
+          className={`flex items-center gap-1 px-2 sm:px-3 py-1.5 rounded text-xs font-medium transition-colors ${
             interceptEnabled
               ? 'bg-orange-900/50 text-orange-300 border border-orange-700 hover:bg-orange-900/70'
               : 'text-app-muted hover:text-app-text hover:bg-app-hover border border-transparent'
@@ -220,7 +220,7 @@ export default function Header({
           title={isAuthenticated ? 'Toggle request interception' : 'Login required'}
         >
           {interceptEnabled ? <Shield size={13} /> : <ShieldOff size={13} />}
-          Intercept
+          <span className="hidden sm:inline">Intercept</span>
           {pendingCount > 0 && (
             <span className="bg-orange-500 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center ml-0.5">
               {pendingCount}
@@ -229,14 +229,14 @@ export default function Header({
         </button>
 
         {interceptEnabled && !showInterceptPanel && (
-          <button onClick={() => setShowInterceptPanel(true)} className="btn-ghost text-xs">
+          <button onClick={() => setShowInterceptPanel(true)} className="btn-ghost text-xs max-[420px]:hidden">
             Traffic
           </button>
         )}
 
         <button
           onClick={handleDownloadExtension}
-          className="flex items-center gap-1.5 px-2 sm:px-3 py-1.5 rounded text-xs font-medium text-app-muted hover:text-app-text hover:bg-app-hover border border-transparent transition-colors"
+          className="flex items-center gap-1.5 px-2 sm:px-3 py-1.5 rounded text-xs font-medium text-app-muted hover:text-app-text hover:bg-app-hover border border-transparent transition-colors max-[420px]:hidden"
           title="Download browser extension"
         >
           <Download size={13} />
@@ -246,11 +246,11 @@ export default function Header({
         <div className="relative">
           <button
             onClick={() => setShowEnvDropdown((value) => !value)}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-app-panel border border-app-border rounded text-sm text-app-text hover:border-app-accent transition-colors"
+            className="flex items-center gap-1.5 px-2 sm:px-3 py-1.5 bg-app-panel border border-app-border rounded text-xs sm:text-sm text-app-text hover:border-app-accent transition-colors"
           >
             <Globe size={13} className="text-app-muted" />
-            <span className="max-w-20 sm:max-w-28 truncate">{activeEnv?.name ?? 'No Environment'}</span>
-            <ChevronDown size={12} className="text-app-muted" />
+            <span className="max-w-12 sm:max-w-28 truncate">{activeEnv?.name ?? 'No Environment'}</span>
+            <ChevronDown size={12} className="text-app-muted max-[420px]:hidden" />
           </button>
           {showEnvDropdown && (
             <div className="absolute right-0 mt-1 w-52 bg-app-panel border border-app-border rounded shadow-xl z-50">
@@ -297,7 +297,7 @@ export default function Header({
           )}
         </div>
 
-        {authControls}
+        <div className="flex-shrink-0">{authControls}</div>
       </div>
       </header>
     </>

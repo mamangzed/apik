@@ -116,95 +116,100 @@ export default function UrlBar() {
   };
 
   return (
-    <div className="flex items-center gap-2 px-3 py-2.5 border-b border-app-border bg-app-bg flex-shrink-0">
-      {/* Method Selector */}
-      <div className="relative">
-        <button
-          onClick={() => setShowMethodDropdown((v) => !v)}
-          className={`flex items-center gap-1 px-3 py-1.5 rounded text-xs font-bold font-mono min-w-20 justify-between ${
-            METHOD_BG_COLORS[req.method] || 'bg-app-panel text-app-muted'
-          }`}
-        >
-          {req.method}
-          <ChevronDown size={11} />
-        </button>
-        {showMethodDropdown && (
-          <div className="absolute left-0 mt-1 bg-app-panel border border-app-border rounded shadow-xl z-50 py-1">
-            {METHODS.map((m) => (
-              <button
-                key={m}
-                onClick={() => {
-                  updateActiveRequest({ method: m });
-                  setShowMethodDropdown(false);
-                }}
-                className={`w-full flex items-center px-4 py-1.5 text-xs font-mono font-bold hover:bg-app-hover transition-colors ${
-                  METHOD_BG_COLORS[m]?.split(' ')[1] || 'text-app-muted'
-                }`}
-              >
-                {m}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* URL Input with env-variable highlighting */}
-      <div className="relative flex-1">
-        <div
-          ref={overlayRef}
-          className="pointer-events-none absolute inset-0 overflow-hidden bg-app-panel border border-app-border rounded px-3 py-1.5 text-sm font-mono whitespace-pre"
-          aria-hidden="true"
-        >
-          {highlightedUrl}
+    <div className="flex flex-col gap-2 px-3 py-2.5 border-b border-app-border bg-app-bg flex-shrink-0">
+      <div className="flex items-center gap-2 w-full min-w-0">
+        {/* Method Selector */}
+        <div className="relative flex-shrink-0">
+          <button
+            onClick={() => setShowMethodDropdown((v) => !v)}
+            className={`flex items-center gap-1 px-3 py-1.5 rounded text-xs font-bold font-mono w-[86px] justify-between ${
+              METHOD_BG_COLORS[req.method] || 'bg-app-panel text-app-muted'
+            }`}
+          >
+            {req.method}
+            <ChevronDown size={11} />
+          </button>
+          {showMethodDropdown && (
+            <div className="absolute left-0 mt-1 bg-app-panel border border-app-border rounded shadow-xl z-50 py-1">
+              {METHODS.map((m) => (
+                <button
+                  key={m}
+                  onClick={() => {
+                    updateActiveRequest({ method: m });
+                    setShowMethodDropdown(false);
+                  }}
+                  className={`w-full flex items-center px-4 py-1.5 text-xs font-mono font-bold hover:bg-app-hover transition-colors ${
+                    METHOD_BG_COLORS[m]?.split(' ')[1] || 'text-app-muted'
+                  }`}
+                >
+                  {m}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
-        <input
-          ref={inputRef}
-          type="text"
-          value={req.url}
-          onChange={(e) => updateActiveRequest({ url: e.target.value })}
-          onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-          onScroll={(e) => {
-            if (overlayRef.current) {
-              overlayRef.current.scrollLeft = e.currentTarget.scrollLeft;
-            }
-          }}
-          className="relative z-10 w-full bg-transparent border border-app-border rounded px-3 py-1.5 text-sm font-mono text-transparent caret-app-text focus:outline-none focus:border-app-accent transition-colors"
-          spellCheck={false}
-        />
+
+        {/* URL Input with env-variable highlighting */}
+        <div className="relative flex-1 min-w-0">
+          <div
+            ref={overlayRef}
+            className="pointer-events-none absolute inset-0 overflow-hidden bg-app-panel border border-app-border rounded px-3 py-1.5 text-sm font-mono whitespace-pre"
+            aria-hidden="true"
+          >
+            {highlightedUrl}
+          </div>
+          <input
+            ref={inputRef}
+            type="text"
+            value={req.url}
+            onChange={(e) => updateActiveRequest({ url: e.target.value })}
+            onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+            onScroll={(e) => {
+              if (overlayRef.current) {
+                overlayRef.current.scrollLeft = e.currentTarget.scrollLeft;
+              }
+            }}
+            className="relative z-10 w-full bg-transparent border border-app-border rounded px-3 py-1.5 text-sm font-mono text-transparent caret-app-text focus:outline-none focus:border-app-accent transition-colors"
+            spellCheck={false}
+          />
+        </div>
+
+        {/* Send */}
+        <button
+          onClick={handleSend}
+          disabled={isLoading}
+          className="flex items-center gap-1.5 bg-app-accent hover:bg-app-accent-hover disabled:opacity-60 text-white text-sm font-medium px-3 sm:px-4 py-1.5 rounded transition-colors min-w-[72px] sm:min-w-20 justify-center flex-shrink-0"
+          title="Send request (Ctrl+Enter)"
+        >
+          {isLoading ? (
+            <Loader2 size={14} className="animate-spin" />
+          ) : (
+            <Send size={14} />
+          )}
+          <span className="hidden sm:inline">{isLoading ? 'Sending' : 'Send'}</span>
+        </button>
       </div>
 
-      {/* Name input */}
-      <input
-        type="text"
-        value={req.name}
-        onChange={(e) => updateActiveRequest({ name: e.target.value })}
-        placeholder="Request name"
-        className="w-36 bg-transparent border border-app-border rounded px-2 py-1.5 text-sm text-app-muted focus:outline-none focus:border-app-accent transition-colors"
-      />
+      <div className="flex items-center gap-2 w-full">
+        {/* Name input */}
+        <input
+          type="text"
+          value={req.name}
+          onChange={(e) => updateActiveRequest({ name: e.target.value })}
+          placeholder="Request name"
+          className="flex-1 sm:flex-none sm:w-44 bg-transparent border border-app-border rounded px-2 py-1.5 text-sm text-app-muted focus:outline-none focus:border-app-accent transition-colors min-w-0"
+        />
 
-      {/* Save */}
-      <button
-        onClick={handleSave}
-        className="flex items-center gap-1.5 px-2.5 py-1.5 text-sm text-app-muted hover:text-app-text hover:bg-app-hover border border-app-border rounded transition-colors"
-        title="Save request (Ctrl+S)"
-      >
-        <Save size={14} />
-      </button>
-
-      {/* Send */}
-      <button
-        onClick={handleSend}
-        disabled={isLoading}
-        className="flex items-center gap-1.5 bg-app-accent hover:bg-app-accent-hover disabled:opacity-60 text-white text-sm font-medium px-4 py-1.5 rounded transition-colors min-w-20 justify-center"
-        title="Send request (Ctrl+Enter)"
-      >
-        {isLoading ? (
-          <Loader2 size={14} className="animate-spin" />
-        ) : (
-          <Send size={14} />
-        )}
-        {isLoading ? 'Sending' : 'Send'}
-      </button>
+        {/* Save */}
+        <button
+          onClick={handleSave}
+          className="flex items-center gap-1.5 px-2.5 py-1.5 text-sm text-app-muted hover:text-app-text hover:bg-app-hover border border-app-border rounded transition-colors flex-shrink-0"
+          title="Save request (Ctrl+S)"
+        >
+          <Save size={14} />
+          <span className="hidden sm:inline">Save</span>
+        </button>
+      </div>
     </div>
   );
 }
