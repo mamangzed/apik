@@ -1,4 +1,4 @@
-import { ReactNode, useEffect, useState } from 'react';
+import { ReactNode, useEffect, useRef, useState } from 'react';
 import { Routes, Route, Link } from 'react-router-dom';
 import { SignIn, SignUp, UserButton, useAuth } from '@clerk/react';
 import { Toaster } from 'react-hot-toast';
@@ -22,6 +22,16 @@ import PublicDocsPage from './components/Public/PublicDocsPage';
 interface AppProps {
   clerkEnabled: boolean;
 }
+
+const DONATION_LINKS = {
+  kofi: 'https://ko-fi.com/mamangzed',
+  saweria: 'https://saweria.co/zedkntl',
+};
+
+const DONATION_BADGES = {
+  kofi: 'https://img.shields.io/badge/Ko--fi-Support%20Me-ff5e5b?logo=ko-fi&logoColor=white',
+  saweria: 'https://img.shields.io/badge/Saweria-Dukung%20Saya-f97316?logo=buymeacoffee&logoColor=white',
+};
 
 function AuthConfigMissingPage() {
   return (
@@ -59,6 +69,118 @@ function AppShell({ authControls, autoLoad = true }: { authControls: ReactNode; 
     isAuthenticated,
     userId,
   } = useAppStore();
+  const [showDonationModal, setShowDonationModal] = useState(true);
+  const [donationModalEntered, setDonationModalEntered] = useState(false);
+  const [isMobileLayout, setIsMobileLayout] = useState(() => window.innerWidth < 1024);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [mobileSidebarMounted, setMobileSidebarMounted] = useState(false);
+  const mobileSidebarRef = useRef<HTMLDivElement | null>(null);
+  const mobileSidebarTouchStartXRef = useRef<number | null>(null);
+  const mobileSidebarTouchStartYRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    const handleResize = () => {
+      const mobile = window.innerWidth < 1024;
+      setIsMobileLayout(mobile);
+      if (!mobile) {
+        setMobileSidebarOpen(false);
+      }
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => {
+      window.removeEventListener('resize', handleResize);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isMobileLayout) {
+      setMobileSidebarMounted(false);
+      return;
+    }
+
+    if (mobileSidebarOpen) {
+      setMobileSidebarMounted(true);
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setMobileSidebarMounted(false);
+    }, 220);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [isMobileLayout, mobileSidebarOpen]);
+
+  useEffect(() => {
+    if (!isMobileLayout || !mobileSidebarOpen) {
+      return;
+    }
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [isMobileLayout, mobileSidebarOpen]);
+
+  useEffect(() => {
+    if (!isMobileLayout || !mobileSidebarOpen || !mobileSidebarRef.current) {
+      return;
+    }
+
+    const drawer = mobileSidebarRef.current;
+    drawer.focus();
+
+    const handleTrapFocus = (event: KeyboardEvent) => {
+      if (event.key !== 'Tab') {
+        return;
+      }
+
+      const focusable = drawer.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])',
+      );
+
+      if (!focusable.length) {
+        event.preventDefault();
+        return;
+      }
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const activeElement = document.activeElement as HTMLElement | null;
+
+      if (event.shiftKey && activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener('keydown', handleTrapFocus);
+    return () => {
+      document.removeEventListener('keydown', handleTrapFocus);
+    };
+  }, [isMobileLayout, mobileSidebarOpen]);
+
+  useEffect(() => {
+    if (!showDonationModal) {
+      setDonationModalEntered(false);
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setDonationModalEntered(true);
+    }, 10);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [showDonationModal]);
 
   const executeSave = async (collectionId: string, requestId: string) => {
     const state = useAppStore.getState();
@@ -146,6 +268,25 @@ function AppShell({ authControls, autoLoad = true }: { authControls: ReactNode; 
     const handleShortcut = async (event: KeyboardEvent) => {
       const key = event.key.toLowerCase();
       const ctrlOrMeta = event.ctrlKey || event.metaKey;
+
+      if (showDonationModal) {
+        if (key === 'escape') {
+          event.preventDefault();
+          setShowDonationModal(false);
+          return;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+        return;
+      }
+
+      if (isMobileLayout && mobileSidebarOpen && key === 'escape') {
+        event.preventDefault();
+        setMobileSidebarOpen(false);
+        return;
+      }
 
       if (key === 'f5' || key === 'f12' || (event.altKey && (key === 'arrowleft' || key === 'arrowright'))) {
         event.preventDefault();
@@ -240,7 +381,7 @@ function AppShell({ authControls, autoLoad = true }: { authControls: ReactNode; 
       window.removeEventListener('contextmenu', blockContextMenu);
       document.removeEventListener('keydown', handleShortcut, true);
     };
-  }, [tabs, activeTabId, sendRequest, openNewTab, closeTab, showInterceptPanel]);
+  }, [tabs, activeTabId, sendRequest, openNewTab, closeTab, showInterceptPanel, showDonationModal, isMobileLayout, mobileSidebarOpen]);
 
   return (
     <div className="flex flex-col h-screen overflow-hidden bg-app-bg">
@@ -250,26 +391,156 @@ function AppShell({ authControls, autoLoad = true }: { authControls: ReactNode; 
           style: { background: '#22272e', color: '#cdd9e5', border: '1px solid #30363d' },
         }}
       />
-      <Header authControls={authControls} />
+      <Header
+        authControls={authControls}
+        showMobileSidebarToggle={isMobileLayout}
+        isMobileSidebarOpen={mobileSidebarOpen}
+        onToggleMobileSidebar={() => setMobileSidebarOpen((value) => !value)}
+      />
       <div className="flex flex-1 overflow-hidden">
-        <PanelGroup direction="horizontal" id="main-layout">
-          <Panel id="sidebar" defaultSize={20} minSize={14} maxSize={35}>
-            <Sidebar />
-          </Panel>
-          <PanelResizeHandle className="w-1 bg-app-border hover:bg-app-accent transition-colors cursor-col-resize" />
-          <Panel id="main" defaultSize={80}>
-            <div className="flex flex-col h-full">
+        {isMobileLayout ? (
+          <>
+            <div className="flex flex-col h-full w-full">
               <TabBar />
               {showInterceptPanel ? <InterceptPanel /> : (activeTabId ? <RequestPanel /> : <WelcomeScreen />)}
             </div>
-          </Panel>
-        </PanelGroup>
+            {mobileSidebarMounted && (
+              <>
+                <button
+                  type="button"
+                  aria-label="Close sidebar"
+                  className={`fixed inset-0 z-40 bg-black/55 transition-opacity duration-200 ${mobileSidebarOpen ? 'opacity-100' : 'opacity-0'}`}
+                  onClick={() => setMobileSidebarOpen(false)}
+                />
+                <div
+                  ref={mobileSidebarRef}
+                  role="dialog"
+                  aria-modal="true"
+                  aria-label="Sidebar"
+                  tabIndex={-1}
+                  onTouchStart={(event) => {
+                    mobileSidebarTouchStartXRef.current = event.touches[0]?.clientX ?? null;
+                    mobileSidebarTouchStartYRef.current = event.touches[0]?.clientY ?? null;
+                  }}
+                  onTouchEnd={(event) => {
+                    const startX = mobileSidebarTouchStartXRef.current;
+                    const startY = mobileSidebarTouchStartYRef.current;
+                    const endX = event.changedTouches[0]?.clientX;
+                    const endY = event.changedTouches[0]?.clientY;
+                    mobileSidebarTouchStartXRef.current = null;
+                    mobileSidebarTouchStartYRef.current = null;
+
+                    if (
+                      typeof startX !== 'number'
+                      || typeof startY !== 'number'
+                      || typeof endX !== 'number'
+                      || typeof endY !== 'number'
+                    ) {
+                      return;
+                    }
+
+                    const deltaX = endX - startX;
+                    const deltaY = endY - startY;
+                    const horizontalSwipe = Math.abs(deltaX) > Math.abs(deltaY) * 1.2;
+
+                    if (horizontalSwipe && deltaX < -60 && Math.abs(deltaY) < 42) {
+                      setMobileSidebarOpen(false);
+                    }
+                  }}
+                  onClickCapture={(event) => {
+                    const target = event.target as HTMLElement | null;
+                    if (!target) {
+                      return;
+                    }
+
+                    if (target.closest('a,button')) {
+                      setMobileSidebarOpen(false);
+                    }
+                  }}
+                  className={`fixed left-0 top-12 bottom-0 z-50 w-[86vw] max-w-sm border-r border-app-border bg-app-sidebar shadow-2xl transition-transform duration-200 ${mobileSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}
+                >
+                  <Sidebar />
+                </div>
+              </>
+            )}
+          </>
+        ) : (
+          <PanelGroup direction="horizontal" id="main-layout">
+            <Panel id="sidebar" defaultSize={20} minSize={14} maxSize={35}>
+              <Sidebar />
+            </Panel>
+            <PanelResizeHandle className="w-1 bg-app-border hover:bg-app-accent transition-colors cursor-col-resize" />
+            <Panel id="main" defaultSize={80}>
+              <div className="flex flex-col h-full">
+                <TabBar />
+                {showInterceptPanel ? <InterceptPanel /> : (activeTabId ? <RequestPanel /> : <WelcomeScreen />)}
+              </div>
+            </Panel>
+          </PanelGroup>
+        )}
       </div>
 
       {showEnvModal && <EnvironmentModal />}
       {showDocViewer && docViewerCollection && <DocViewer collectionId={docViewerCollection} />}
       {showImportModal && <ImportModal />}
       {showShareModal && <ShareModal />}
+      {showDonationModal && (
+        <div
+          className={`fixed inset-0 z-[100] flex items-center justify-center bg-[#0b1017]/80 backdrop-blur-sm p-4 transition-opacity duration-200 ${donationModalEntered ? 'opacity-100' : 'opacity-0'}`}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="donation-modal-title"
+            className={`w-full max-w-lg overflow-hidden rounded-2xl border border-app-border bg-app-panel shadow-2xl transition-all duration-200 ${donationModalEntered ? 'translate-y-0 scale-100' : 'translate-y-2 scale-[0.98]'}`}
+          >
+            <div className="bg-gradient-to-r from-app-accent/20 via-transparent to-[#f97316]/20 px-6 py-5 border-b border-app-border">
+              <p className="text-[11px] tracking-[0.16em] uppercase text-app-muted">Open Source Support</p>
+              <h2 id="donation-modal-title" className="mt-1 text-xl font-semibold text-app-text">
+                Keep APIK Free for Everyone
+              </h2>
+              <p className="mt-2 text-sm text-app-muted">
+                Thanks for using APIK. Your support helps maintain updates, fixes, and new features for the open source community.
+              </p>
+            </div>
+
+            <div className="px-6 py-5 space-y-3">
+              <a
+                href={DONATION_LINKS.kofi}
+                target="_blank"
+                rel="noreferrer"
+                className="group flex items-center justify-between rounded-xl border border-app-border bg-app-secondary px-4 py-3 hover:border-app-accent transition-colors"
+              >
+                <div>
+                  <p className="text-sm font-medium text-app-text">Donate via Ko-fi</p>
+                  <p className="text-xs text-app-muted">Quick one-time support</p>
+                </div>
+                <img src={DONATION_BADGES.kofi} alt="Ko-fi logo" className="h-7" />
+              </a>
+
+              <a
+                href={DONATION_LINKS.saweria}
+                target="_blank"
+                rel="noreferrer"
+                className="group flex items-center justify-between rounded-xl border border-app-border bg-app-secondary px-4 py-3 hover:border-[#f97316] transition-colors"
+              >
+                <div>
+                  <p className="text-sm font-medium text-app-text">Donate via Saweria</p>
+                  <p className="text-xs text-app-muted">Support in local payment methods</p>
+                </div>
+                <img src={DONATION_BADGES.saweria} alt="Saweria logo" className="h-7" />
+              </a>
+            </div>
+
+            <div className="flex items-center justify-between border-t border-app-border bg-app-secondary/40 px-6 py-4">
+              <span className="text-xs text-app-muted">Modal ini muncul saat aplikasi di-refresh. Tekan Esc untuk menutup.</span>
+              <button type="button" className="btn-primary" onClick={() => setShowDonationModal(false)}>
+                Masuk Aplikasi
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

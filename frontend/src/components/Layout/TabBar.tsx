@@ -36,7 +36,7 @@ export default function TabBar() {
         {interceptTabOpen && (
           <div
             onClick={() => setShowInterceptPanel(true)}
-            className={`flex items-center gap-1.5 px-3 py-2 cursor-pointer border-r border-app-border flex-shrink-0 max-w-44 group transition-colors ${
+            className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-2 cursor-pointer border-r border-app-border flex-shrink-0 max-w-40 sm:max-w-44 group transition-colors ${
               showInterceptPanel
                 ? 'bg-app-bg border-b-2 border-b-app-accent -mb-px'
                 : 'hover:bg-app-hover text-app-muted'
@@ -49,7 +49,7 @@ export default function TabBar() {
             </span>
             <button
               onClick={(e) => { e.stopPropagation(); closeInterceptTab(); }}
-              className="p-0.5 hover:bg-app-active rounded transition-opacity flex-shrink-0 ml-auto"
+                className="p-0.5 hover:bg-app-active rounded transition-opacity flex-shrink-0 ml-auto"
             >
               <X size={12} />
             </button>
@@ -83,7 +83,7 @@ export default function TabBar() {
                 setDraggingTabId(null);
               }}
               onDragEnd={() => setDraggingTabId(null)}
-              className={`flex items-center gap-1.5 px-3 py-2 cursor-pointer border-r border-app-border flex-shrink-0 max-w-44 group transition-colors ${
+              className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-2 cursor-pointer border-r border-app-border flex-shrink-0 max-w-40 sm:max-w-44 group transition-colors ${
                 isActive
                   ? 'bg-app-bg border-b-2 border-b-app-accent -mb-px'
                   : 'hover:bg-app-hover text-app-muted'
@@ -131,7 +131,7 @@ export default function TabBar() {
               )}
               <button
                 onClick={(e) => { e.stopPropagation(); closeTab(tab.id); }}
-                className="p-0.5 hover:bg-app-active rounded opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 ml-auto"
+                className="p-0.5 hover:bg-app-active rounded opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity flex-shrink-0 ml-auto"
               >
                 <X size={12} />
               </button>

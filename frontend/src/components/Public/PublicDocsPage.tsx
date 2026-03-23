@@ -139,18 +139,18 @@ export default function PublicDocsPage() {
 
   return (
     <div className="min-h-screen bg-app-bg text-app-text">
-      <div className="max-w-5xl mx-auto px-6 py-8 space-y-6">
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-5 sm:space-y-6">
         <Link to="/" className="inline-flex items-center gap-2 text-sm text-app-muted hover:text-app-text">
           <ArrowLeft size={14} />
           Open app
         </Link>
 
-        <div className="panel p-6">
+        <div className="panel p-4 sm:p-6">
           <div className="flex items-center gap-3">
             <Book size={18} className="text-app-accent" />
             <div>
               <p className="text-xs uppercase tracking-[0.3em] text-app-muted">Shared API Docs</p>
-              <h1 className="text-3xl font-semibold mt-2">{collection.name}</h1>
+              <h1 className="text-2xl sm:text-3xl font-semibold mt-2 break-words">{collection.name}</h1>
             </div>
           </div>
           {collection.description && (
@@ -163,24 +163,24 @@ export default function PublicDocsPage() {
         <div className="space-y-5">
           {collection.requests.map((request) => (
             <div key={request.id} className="panel overflow-hidden">
-              <div className="flex items-center gap-3 px-5 py-4 bg-app-sidebar border-b border-app-border">
+              <div className="flex items-start sm:items-center gap-3 px-4 sm:px-5 py-4 bg-app-sidebar border-b border-app-border">
                 <span className={`text-xs font-mono font-bold px-2.5 py-1 rounded ${METHOD_BG_COLORS[request.method]}`}>
                   {request.method}
                 </span>
                 <div className="min-w-0">
-                  <div className="text-sm font-medium">{request.name}</div>
+                  <div className="text-sm font-medium break-words">{request.name}</div>
                   <div className="text-xs text-app-muted truncate">{request.url || '/endpoint'}</div>
                 </div>
               </div>
-              <div className="p-5 space-y-4">
+              <div className="p-4 sm:p-5 space-y-4">
                 {request.description && <MarkdownBlock content={request.description} />}
                 {request.headers.filter((header) => header.enabled && header.key).length > 0 && (
                   <div>
                     <div className="text-xs uppercase tracking-wider text-app-muted mb-2">Headers</div>
                     <div className="rounded border border-app-border overflow-hidden">
                       {request.headers.filter((header) => header.enabled && header.key).map((header) => (
-                        <div key={header.id} className="flex items-center gap-3 px-4 py-2 text-sm border-t border-app-border first:border-t-0">
-                          <span className="text-blue-300 font-mono min-w-32">{header.key}</span>
+                        <div key={header.id} className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 px-4 py-2 text-sm border-t border-app-border first:border-t-0">
+                          <span className="text-blue-300 font-mono sm:min-w-32 break-all">{header.key}</span>
                           <span className="text-app-muted font-mono break-all">{header.value}</span>
                         </div>
                       ))}

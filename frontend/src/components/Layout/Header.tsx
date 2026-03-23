@@ -12,11 +12,16 @@ import {
   Download,
   Cloud,
   HardDrive,
+  Menu,
+  X,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 interface HeaderProps {
   authControls?: ReactNode;
+  showMobileSidebarToggle?: boolean;
+  isMobileSidebarOpen?: boolean;
+  onToggleMobileSidebar?: () => void;
 }
 
 const REQUIRED_BRAND_HREF = 'https://wandahadissuara.id/';
@@ -24,7 +29,12 @@ const REQUIRED_BRAND_TEXT = 'created by mamangzed';
 const BUILD_BRAND_HREF = String((import.meta.env as Record<string, unknown>).VITE_BRAND_HREF || '').trim();
 const BUILD_BRAND_TEXT = String((import.meta.env as Record<string, unknown>).VITE_BRAND_TEXT || '').trim().toLowerCase();
 
-export default function Header({ authControls }: HeaderProps) {
+export default function Header({
+  authControls,
+  showMobileSidebarToggle = false,
+  isMobileSidebarOpen = false,
+  onToggleMobileSidebar,
+}: HeaderProps) {
   const {
     environments,
     activeEnvironmentId,
@@ -137,8 +147,18 @@ export default function Header({ authControls }: HeaderProps) {
         </div>
       )}
 
-      <header className="flex items-center justify-between px-4 h-12 bg-app-sidebar border-b border-app-border flex-shrink-0 gap-4">
-      <div className="flex items-center gap-3 min-w-0">
+      <header className="flex flex-wrap items-center justify-between px-3 sm:px-4 py-2 sm:h-12 bg-app-sidebar border-b border-app-border flex-shrink-0 gap-2 sm:gap-4">
+      <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+        {showMobileSidebarToggle && (
+          <button
+            type="button"
+            onClick={onToggleMobileSidebar}
+            className="p-1.5 rounded border border-app-border text-app-muted hover:text-app-text hover:bg-app-hover"
+            aria-label={isMobileSidebarOpen ? 'Close sidebar' : 'Open sidebar'}
+          >
+            {isMobileSidebarOpen ? <X size={15} /> : <Menu size={15} />}
+          </button>
+        )}
         <div>
           <div className="flex items-center gap-2">
             <div className="text-app-accent font-bold text-lg tracking-tight">APIK</div>
@@ -147,17 +167,17 @@ export default function Header({ authControls }: HeaderProps) {
               href={REQUIRED_BRAND_HREF}
               target="_blank"
               rel="noreferrer"
-              className="text-[10px] uppercase tracking-[0.18em] text-app-muted hover:text-app-text"
+              className="hidden sm:inline text-[10px] uppercase tracking-[0.18em] text-app-muted hover:text-app-text"
             >
               {REQUIRED_BRAND_TEXT}
             </a>
           </div>
-          <div className="text-[10px] uppercase tracking-[0.25em] text-app-muted">API Workspace</div>
+          <div className="hidden sm:block text-[10px] uppercase tracking-[0.25em] text-app-muted">API Workspace</div>
         </div>
-        <span className="text-app-muted text-xs bg-app-active px-1.5 py-0.5 rounded">v{__APP_VERSION__}</span>
+        <span className="hidden sm:inline text-app-muted text-xs bg-app-active px-1.5 py-0.5 rounded">v{__APP_VERSION__}</span>
       </div>
 
-      <div className="flex items-center gap-2 min-w-0">
+      <div className="flex items-center gap-1 sm:gap-2 min-w-0">
         <div className="hidden md:flex items-center gap-2 px-2.5 py-1 rounded border border-app-border bg-app-panel text-xs text-app-muted">
           {storageMode === 'remote' ? <Cloud size={12} /> : <HardDrive size={12} />}
           {storageMode === 'remote' ? 'Cloud sync' : 'Local storage'}
@@ -165,15 +185,16 @@ export default function Header({ authControls }: HeaderProps) {
 
         <button
           onClick={openNewTab}
-          className="flex items-center gap-1.5 text-sm text-app-muted hover:text-app-text hover:bg-app-hover px-3 py-1.5 rounded transition-colors"
+          className="flex items-center gap-1.5 text-xs sm:text-sm text-app-muted hover:text-app-text hover:bg-app-hover px-2 sm:px-3 py-1.5 rounded transition-colors"
         >
           <Plus size={14} />
-          New Request
+          <span className="hidden sm:inline">New Request</span>
+          <span className="sm:hidden">New</span>
         </button>
 
       </div>
 
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1 sm:gap-2 ml-auto sm:ml-0">
         <div className="hidden md:flex items-center gap-1.5 text-xs text-app-muted">
           {wsConnected ? (
             <span className="flex items-center gap-1 text-green-400">
@@ -191,7 +212,7 @@ export default function Header({ authControls }: HeaderProps) {
         <button
           onClick={handleInterceptToggle}
           disabled={!isAuthenticated}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium transition-colors ${
+          className={`flex items-center gap-1.5 px-2 sm:px-3 py-1.5 rounded text-xs font-medium transition-colors ${
             interceptEnabled
               ? 'bg-orange-900/50 text-orange-300 border border-orange-700 hover:bg-orange-900/70'
               : 'text-app-muted hover:text-app-text hover:bg-app-hover border border-transparent'
@@ -215,11 +236,11 @@ export default function Header({ authControls }: HeaderProps) {
 
         <button
           onClick={handleDownloadExtension}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium text-app-muted hover:text-app-text hover:bg-app-hover border border-transparent transition-colors"
+          className="flex items-center gap-1.5 px-2 sm:px-3 py-1.5 rounded text-xs font-medium text-app-muted hover:text-app-text hover:bg-app-hover border border-transparent transition-colors"
           title="Download browser extension"
         >
           <Download size={13} />
-          Extension
+          <span className="hidden sm:inline">Extension</span>
         </button>
 
         <div className="relative">
@@ -228,7 +249,7 @@ export default function Header({ authControls }: HeaderProps) {
             className="flex items-center gap-1.5 px-3 py-1.5 bg-app-panel border border-app-border rounded text-sm text-app-text hover:border-app-accent transition-colors"
           >
             <Globe size={13} className="text-app-muted" />
-            <span className="max-w-28 truncate">{activeEnv?.name ?? 'No Environment'}</span>
+            <span className="max-w-20 sm:max-w-28 truncate">{activeEnv?.name ?? 'No Environment'}</span>
             <ChevronDown size={12} className="text-app-muted" />
           </button>
           {showEnvDropdown && (

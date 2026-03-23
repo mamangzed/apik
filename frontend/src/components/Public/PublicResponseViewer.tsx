@@ -62,8 +62,8 @@ export default function PublicResponseViewer({ response }: Props) {
   };
 
   return (
-    <div className="flex flex-col h-[420px] overflow-hidden bg-app-bg border border-app-border rounded-lg">
-      <div className="flex items-center gap-4 px-3 py-2 border-b border-app-border bg-app-sidebar flex-shrink-0">
+    <div className="flex flex-col h-[420px] sm:h-[460px] overflow-hidden bg-app-bg border border-app-border rounded-lg">
+      <div className="flex flex-wrap items-center gap-2 sm:gap-4 px-3 py-2 border-b border-app-border bg-app-sidebar flex-shrink-0">
         <div className="flex items-center gap-2">
           <span className={`text-sm font-semibold ${getStatusColor(response.status)}`}>
             {response.status || 'ERR'}
@@ -81,12 +81,12 @@ export default function PublicResponseViewer({ response }: Props) {
           </>
         )}
 
-        <div className="flex items-center ml-auto gap-0.5">
+        <div className="order-3 sm:order-none w-full sm:w-auto flex items-center gap-0.5 overflow-x-auto pb-1 sm:pb-0">
           {TABS.map((tab) => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`px-3 py-1 text-xs rounded transition-colors ${
+              className={`px-2.5 py-1 text-xs rounded transition-colors whitespace-nowrap ${
                 activeTab === tab.id
                   ? 'bg-app-active text-app-text'
                   : 'text-app-muted hover:text-app-text hover:bg-app-hover'
@@ -100,7 +100,7 @@ export default function PublicResponseViewer({ response }: Props) {
         </div>
 
         {activeTab === 'body' && (
-          <div className="flex items-center gap-1 ml-2">
+          <div className="order-4 sm:order-none w-full sm:w-auto flex items-center gap-1 sm:ml-2 overflow-x-auto">
             <button
               onClick={() => setRawView((value) => !value)}
               className={`px-2 py-1 text-xs rounded transition-colors ${
@@ -223,11 +223,11 @@ export default function PublicResponseViewer({ response }: Props) {
 function TimelineRow({ label, time, color }: { label: string; time: number; color: string }) {
   return (
     <div className="flex items-center gap-3">
-      <div className="w-36 text-xs text-app-muted text-right flex-shrink-0">{label}</div>
+      <div className="w-24 sm:w-36 text-[11px] sm:text-xs text-app-muted text-right flex-shrink-0">{label}</div>
       <div className="flex-1 h-5 bg-app-panel rounded overflow-hidden">
         <div className={`h-full ${color} rounded opacity-80`} style={{ width: `${Math.max(5, Math.min(100, time / 10))}%` }} />
       </div>
-      <div className="w-16 text-xs text-app-muted text-left flex-shrink-0">{time}ms</div>
+      <div className="w-12 sm:w-16 text-[11px] sm:text-xs text-app-muted text-left flex-shrink-0">{time}ms</div>
     </div>
   );
 }
