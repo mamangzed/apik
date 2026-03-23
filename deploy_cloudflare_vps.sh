@@ -172,6 +172,31 @@ free_http_ports_for_nginx() {
   done
 }
 
+disable_conflicting_nginx_domain_sites() {
+  local domain="$1"
+  local enabled_dir="/etc/nginx/sites-enabled"
+
+  if [ ! -d "$enabled_dir" ]; then
+    return
+  fi
+
+  echo "Checking for conflicting Nginx sites for ${domain}..."
+
+  local site
+  for site in "$enabled_dir"/*; do
+    [ -e "$site" ] || continue
+
+    if [ "$(basename "$site")" = "apik" ]; then
+      continue
+    fi
+
+    if grep -Eqs "server_name[[:space:]]+([^;]*[[:space:]])?${domain}([[:space:];]|$)" "$site"; then
+      echo "Disabling conflicting Nginx site: $site"
+      rm -f "$site"
+    fi
+  done
+}
+
 wait_for_apt_locks() {
   local timeout_seconds="$APT_LOCK_WAIT_SECONDS"
   local started_at now elapsed locked
@@ -1055,13 +1080,17 @@ server {
   }
 
   location / {
-    root ${APP_DIR}/frontend/dist;
-    try_files \$uri \$uri/ /index.html;
+    proxy_pass http://127.0.0.1:${BACKEND_PORT};
+    proxy_http_version 1.1;
+    proxy_set_header Host \$host;
+    proxy_set_header X-Forwarded-Proto \$scheme;
+    proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
   }
 }
 EOF
 
 ln -sf /etc/nginx/sites-available/apik /etc/nginx/sites-enabled/apik
+disable_conflicting_nginx_domain_sites "${DOMAIN}"
 rm -f /etc/nginx/sites-enabled/default
 nginx -t
 systemctl enable nginx
