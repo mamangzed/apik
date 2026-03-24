@@ -133,11 +133,13 @@ function normalizeAuth(rawAuth: unknown): ApiRequest['auth'] {
   };
 }
 
-function normalizeApiRequest(raw: unknown, fallbackName: string): Partial<ApiRequest> {
+function normalizeApiRequest(raw: unknown, fallbackName: string): ApiRequest {
   const now = new Date().toISOString();
   const request = isRecord(raw) ? raw : {};
+  const id = asString(request.id).trim() || `${toSlug(fallbackName)}-${Math.random().toString(36).slice(2, 10)}`;
 
   return {
+    id,
     name: asString(request.name, fallbackName),
     method: sanitizeMethod(request.method),
     url: asString(request.url),
@@ -254,8 +256,8 @@ function readPostmanBody(rawBody: unknown): ApiRequest['body'] {
   return { type: 'none', content: '' };
 }
 
-function extractPostmanRequests(items: unknown, folderPrefix = ''): Partial<ApiRequest>[] {
-  const requests: Partial<ApiRequest>[] = [];
+function extractPostmanRequests(items: unknown, folderPrefix = ''): ApiRequest[] {
+  const requests: ApiRequest[] = [];
 
   for (const item of asArray<unknown>(items)) {
     if (!isRecord(item)) {
@@ -267,22 +269,27 @@ function extractPostmanRequests(items: unknown, folderPrefix = ''): Partial<ApiR
 
     if (isRecord(item.request)) {
       const request = item.request;
-      requests.push({
-        name: fullName,
-        method: sanitizeMethod(request.method),
-        url: readPostmanUrl(request.url),
-        params: [],
-        headers: asArray<UnknownRecord>(request.header).map((header, index) => ({
-          id: `header-${index + 1}`,
-          key: asString(header.key),
-          value: asString(header.value),
-          enabled: header.disabled !== true,
-          description: asString(header.description),
-        })),
-        body: readPostmanBody(request.body),
-        auth: readPostmanAuth(request.auth),
-        description: asString(item.description) || asString(request.description),
-      });
+      requests.push(
+        normalizeApiRequest(
+          {
+            name: fullName,
+            method: sanitizeMethod(request.method),
+            url: readPostmanUrl(request.url),
+            params: [],
+            headers: asArray<UnknownRecord>(request.header).map((header, index) => ({
+              id: `header-${index + 1}`,
+              key: asString(header.key),
+              value: asString(header.value),
+              enabled: header.disabled !== true,
+              description: asString(header.description),
+            })),
+            body: readPostmanBody(request.body),
+            auth: readPostmanAuth(request.auth),
+            description: asString(item.description) || asString(request.description),
+          },
+          fullName,
+        ),
+      );
       continue;
     }
 
@@ -440,7 +447,7 @@ function parseOpenApiCollection(data: unknown, fallbackName: string): Partial<Co
   const servers = asArray<UnknownRecord>(doc.servers);
   const baseUrl = asString(servers[0]?.url);
 
-  const requests: Partial<ApiRequest>[] = [];
+  const requests: ApiRequest[] = [];
   const paths = isRecord(doc.paths) ? doc.paths : {};
 
   for (const [pathName, pathItemRaw] of Object.entries(paths)) {
@@ -461,16 +468,22 @@ function parseOpenApiCollection(data: unknown, fallbackName: string): Partial<Co
       const summary = asString(operation.summary);
       const description = asString(operation.description);
 
-      requests.push({
-        name: summary || operationId || `${methodUpper} ${pathName}`,
-        method: methodUpper,
-        url: joinUrl(baseUrl, pathName),
-        params: mergeOpenApiParams(pathParams, operation.parameters),
-        headers: mergeOpenApiHeaders(pathParams, operation.parameters),
-        body: readOpenApiRequestBody(operation.requestBody),
-        auth: readOpenApiAuth(operation, doc),
-        description,
-      });
+      const requestName = summary || operationId || `${methodUpper} ${pathName}`;
+      requests.push(
+        normalizeApiRequest(
+          {
+            name: requestName,
+            method: methodUpper,
+            url: joinUrl(baseUrl, pathName),
+            params: mergeOpenApiParams(pathParams, operation.parameters),
+            headers: mergeOpenApiHeaders(pathParams, operation.parameters),
+            body: readOpenApiRequestBody(operation.requestBody),
+            auth: readOpenApiAuth(operation, doc),
+            description,
+          },
+          requestName,
+        ),
+      );
     }
   }
 
@@ -514,7 +527,7 @@ function parseInsomniaCollection(data: unknown, fallbackName: string): Partial<C
     return resolveGroupName(asString(parent.parentId));
   };
 
-  const requests: Partial<ApiRequest>[] = resources
+  const requests: ApiRequest[] = resources
     .filter((resource) => resource._type === 'request')
     .map((request, index) => {
       const folderPrefix = resolveGroupName(asString(request.parentId));
@@ -554,20 +567,23 @@ function parseInsomniaCollection(data: unknown, fallbackName: string): Partial<C
         }
       }
 
-      return {
+      return normalizeApiRequest(
+        {
+          name,
+          method: sanitizeMethod(request.method),
+          url: asString(request.url),
+          params: asArray<UnknownRecord>(request.parameters).map((entry, paramIndex) => ({
+            id: `param-${paramIndex + 1}`,
+            key: asString(entry.name),
+            value: asString(entry.value),
+            enabled: entry.disabled !== true,
+          })),
+          headers,
+          body,
+          auth,
+        },
         name,
-        method: sanitizeMethod(request.method),
-        url: asString(request.url),
-        params: asArray<UnknownRecord>(request.parameters).map((entry, paramIndex) => ({
-          id: `param-${paramIndex + 1}`,
-          key: asString(entry.name),
-          value: asString(entry.value),
-          enabled: entry.disabled !== true,
-        })),
-        headers,
-        body,
-        auth,
-      };
+      );
     });
 
   const workspace = resources.find((resource) => resource._type === 'workspace');
@@ -597,7 +613,7 @@ function parseHarCollection(data: unknown, fallbackName: string): Partial<Collec
   const log = isRecord(doc.log) ? doc.log : {};
   const entries = asArray<UnknownRecord>(log.entries);
 
-  const requests: Partial<ApiRequest>[] = entries
+  const requests: ApiRequest[] = entries
     .map((entry, index) => {
       const request = isRecord(entry.request) ? entry.request : {};
       const url = asString(request.url);
@@ -635,15 +651,19 @@ function parseHarCollection(data: unknown, fallbackName: string): Partial<Collec
           }
         : { type: 'none', content: '' };
 
-      return {
-        name: `${method} ${pathName || `request-${index + 1}`}`,
-        method,
-        url,
-        params: queryParams,
-        headers,
-        body,
-        auth: { type: 'none' as const },
-      };
+      const requestName = `${method} ${pathName || `request-${index + 1}`}`;
+      return normalizeApiRequest(
+        {
+          name: requestName,
+          method,
+          url,
+          params: queryParams,
+          headers,
+          body,
+          auth: { type: 'none' as const },
+        },
+        requestName,
+      );
     })
     .filter((request) => asString(request.url).length > 0);
 
