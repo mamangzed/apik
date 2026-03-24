@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+---
+
+## [1.1.1] - 2026-03-25
+
+### Added
+- Collection export actions in sidebar (APIK, Postman, OpenAPI)
+- Auto-detect import mode in collection import modal
+
+### Changed
+- Import modal now uses unified collection parser and supports JSON/YAML/HAR uploads
+- Backend import endpoint now supports auto/apik/postman/openapi/insomnia/har formats
+
+### Fixed
+- Format mismatch between apix and apik import labels
+- Loss of request fields during import by improving parser normalization for params, headers, body, and auth
+- Added backend import guardrails and validation for production safety
+
+
 ### Added
 - Initial Docker support with GitHub Actions CI/CD
 - Template environment files (.env.template) for easier setup
@@ -36,5 +54,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-[Unreleased]: https://github.com/yourusername/apik/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/yourusername/apik/compare/v1.1.1...HEAD
+[1.1.1]: https://github.com/yourusername/apik/releases/tag/v1.1.1
 [1.1.0]: https://github.com/yourusername/apik/releases/tag/v1.1.0

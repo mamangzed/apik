@@ -20,10 +20,12 @@ import {
   Globe2,
   Lock,
   RefreshCw,
+  Download,
 } from 'lucide-react';
 import { Collection, ApiRequest } from '../../types';
 import { METHOD_COLORS } from '../../utils/format';
 import toast from 'react-hot-toast';
+import { ExportTargetFormat, serializeCollectionExport } from '../../lib/collectionTransfer';
 
 export default function Sidebar() {
   const {
@@ -139,6 +141,28 @@ export default function Sidebar() {
   const handleRequestDragEnd = () => {
     setDraggingRequest(null);
     setRequestDropTarget(null);
+  };
+
+  const handleExportCollection = (collectionId: string, format: ExportTargetFormat) => {
+    const collection = collections.find((entry) => entry.id === collectionId);
+    if (!collection) {
+      toast.error('Collection not found');
+      return;
+    }
+
+    try {
+      const exported = serializeCollectionExport(collection, format);
+      const blob = new Blob([exported.content], { type: exported.mimeType });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = exported.filename;
+      anchor.click();
+      URL.revokeObjectURL(url);
+      toast.success(`Collection exported as ${format.toUpperCase()}`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to export collection');
+    }
   };
 
   const closeModal = () => {
@@ -380,6 +404,33 @@ export default function Sidebar() {
                   <Share2 size={13} /> Share Collection
                 </button>
               )}
+              <button
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-app-hover text-app-text transition-colors"
+                onClick={() => {
+                  handleExportCollection(contextMenu.id, 'apik');
+                  closeContextMenu();
+                }}
+              >
+                <Download size={13} /> Export APIK
+              </button>
+              <button
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-app-hover text-app-text transition-colors"
+                onClick={() => {
+                  handleExportCollection(contextMenu.id, 'postman');
+                  closeContextMenu();
+                }}
+              >
+                <Download size={13} /> Export Postman
+              </button>
+              <button
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-app-hover text-app-text transition-colors"
+                onClick={() => {
+                  handleExportCollection(contextMenu.id, 'openapi');
+                  closeContextMenu();
+                }}
+              >
+                <Download size={13} /> Export OpenAPI
+              </button>
               <div className="border-t border-app-border my-1" />
               <button
                 className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-red-900/30 text-red-400 transition-colors"

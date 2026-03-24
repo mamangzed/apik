@@ -1,0 +1,96 @@
+name: Auto Release on Version Change
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - package.json
+      - frontend/package.json
+      - backend/package.json
+      - extension/manifest.json
+      - CHANGELOG.md
+
+permissions:
+  contents: write
+
+concurrency:
+  group: auto-release-main
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect version bump
+        id: detect
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          CURRENT_VERSION=$(node -e "const fs=require('fs');const pkg=JSON.parse(fs.readFileSync('package.json','utf8'));process.stdout.write(pkg.version||'')")
+          FRONTEND_VERSION=$(node -e "const fs=require('fs');const pkg=JSON.parse(fs.readFileSync('frontend/package.json','utf8'));process.stdout.write(pkg.version||'')")
+          BACKEND_VERSION=$(node -e "const fs=require('fs');const pkg=JSON.parse(fs.readFileSync('backend/package.json','utf8'));process.stdout.write(pkg.version||'')")
+          EXTENSION_VERSION=$(node -e "const fs=require('fs');const pkg=JSON.parse(fs.readFileSync('extension/manifest.json','utf8'));process.stdout.write(pkg.version||'')")
+          PREVIOUS_VERSION=$(node -e "const {execSync}=require('child_process');try{const c=execSync('git show HEAD~1:package.json',{encoding:'utf8'});process.stdout.write((JSON.parse(c).version||''));}catch{process.stdout.write('')}")
+
+          if [ -z "$CURRENT_VERSION" ]; then
+            echo "version=" >> "$GITHUB_OUTPUT"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "tag_exists=false" >> "$GITHUB_OUTPUT"
+            echo "versions_match=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ "$CURRENT_VERSION" = "$FRONTEND_VERSION" ] && [ "$CURRENT_VERSION" = "$BACKEND_VERSION" ] && [ "$CURRENT_VERSION" = "$EXTENSION_VERSION" ]; then
+            VERSIONS_MATCH=true
+          else
+            VERSIONS_MATCH=false
+          fi
+
+          if [ "$CURRENT_VERSION" != "$PREVIOUS_VERSION" ]; then
+            VERSION_CHANGED=true
+          else
+            VERSION_CHANGED=false
+          fi
+
+          TAG="v$CURRENT_VERSION"
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            TAG_EXISTS=true
+          else
+            TAG_EXISTS=false
+          fi
+
+          echo "version=$CURRENT_VERSION" >> "$GITHUB_OUTPUT"
+          echo "changed=$VERSION_CHANGED" >> "$GITHUB_OUTPUT"
+          echo "tag_exists=$TAG_EXISTS" >> "$GITHUB_OUTPUT"
+          echo "versions_match=$VERSIONS_MATCH" >> "$GITHUB_OUTPUT"
+          echo "frontend_version=$FRONTEND_VERSION" >> "$GITHUB_OUTPUT"
+          echo "backend_version=$BACKEND_VERSION" >> "$GITHUB_OUTPUT"
+          echo "extension_version=$EXTENSION_VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Enforce version synchronization
+        if: steps.detect.outputs.versions_match != 'true'
+        shell: bash
+        run: |
+          echo "Version mismatch detected. All version files must match before release."
+          echo "root/package.json:      ${{ steps.detect.outputs.version }}"
+          echo "frontend/package.json:  ${{ steps.detect.outputs.frontend_version }}"
+          echo "backend/package.json:   ${{ steps.detect.outputs.backend_version }}"
+          echo "extension/manifest.json:${{ steps.detect.outputs.extension_version }}"
+          exit 1
+
+      - name: Create GitHub Release
+        if: steps.detect.outputs.changed == 'true' && steps.detect.outputs.tag_exists == 'false' && steps.detect.outputs.versions_match == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.detect.outputs.version }}
+          name: v${{ steps.detect.outputs.version }}
+          generate_release_notes: true
+          make_latest: true

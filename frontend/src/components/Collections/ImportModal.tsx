@@ -2,26 +2,42 @@ import { useState, useRef } from 'react';
 import { useAppStore } from '../../store';
 import { X, Upload, FileJson, AlertCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { ImportSourceFormat, parseCollectionImport } from '../../lib/collectionTransfer';
 
 export default function ImportModal() {
   const { importCollection, setShowImportModal } = useAppStore();
-  const [format, setFormat] = useState<'postman' | 'apix' | 'openapi'>('postman');
+  const [format, setFormat] = useState<ImportSourceFormat>('auto');
   const [dragging, setDragging] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  const formatOptions: Array<{ value: ImportSourceFormat; label: string }> = [
+    { value: 'auto', label: 'Auto detect' },
+    { value: 'postman', label: 'Postman v2.1' },
+    { value: 'apik', label: 'APIK JSON' },
+    { value: 'openapi', label: 'OpenAPI' },
+    { value: 'insomnia', label: 'Insomnia' },
+    { value: 'har', label: 'HAR' },
+  ];
+
+  const getFallbackName = (fileName: string) =>
+    fileName
+      .replace(/\.[^/.]+$/, '')
+      .replace(/[-_]+/g, ' ')
+      .trim() || 'Imported Collection';
 
   const handleFile = async (file: File) => {
     setError(null);
     setLoading(true);
     try {
       const text = await file.text();
-      const data = JSON.parse(text);
-      await importCollection(data, format);
-      toast.success(`Collection imported: ${data.info?.name || data.name || file.name}`);
+      const { detectedFormat, collection } = parseCollectionImport(text, format, getFallbackName(file.name));
+      await importCollection(collection, 'apik');
+      toast.success(`Collection imported (${detectedFormat}): ${collection.name || file.name}`);
       setShowImportModal(false);
     } catch (err) {
-      setError('Failed to parse file: ' + (err as Error).message);
+      setError('Failed to import file: ' + (err as Error).message);
     } finally {
       setLoading(false);
     }
@@ -60,18 +76,18 @@ export default function ImportModal() {
           {/* Format selector */}
           <div>
             <label className="block text-xs text-app-muted mb-2">Format</label>
-            <div className="flex gap-2">
-              {(['postman', 'apix', 'openapi'] as const).map((f) => (
+            <div className="grid grid-cols-2 gap-2">
+              {formatOptions.map((option) => (
                 <button
-                  key={f}
-                  onClick={() => setFormat(f)}
-                  className={`flex-1 py-2 text-sm rounded border transition-colors capitalize ${
-                    format === f
+                  key={option.value}
+                  onClick={() => setFormat(option.value)}
+                  className={`py-2 text-sm rounded border transition-colors ${
+                    format === option.value
                       ? 'border-app-accent bg-app-accent/10 text-app-text'
                       : 'border-app-border text-app-muted hover:border-app-active hover:text-app-text'
                   }`}
                 >
-                  {f === 'postman' ? 'Postman v2.1' : f === 'apix' ? 'APIK / Bruno' : 'OpenAPI (beta)'}
+                  {option.label}
                 </button>
               ))}
             </div>
@@ -90,12 +106,12 @@ export default function ImportModal() {
             }`}
           >
             <FileJson size={32} className="mx-auto mb-3 text-app-muted opacity-60" />
-            <p className="text-sm text-app-text">Drop a JSON file here</p>
+            <p className="text-sm text-app-text">Drop a collection file here</p>
             <p className="text-xs text-app-muted mt-1">or click to browse</p>
             <input
               ref={fileRef}
               type="file"
-              accept=".json"
+              accept=".json,.yaml,.yml,.har"
               className="hidden"
               onChange={(e) => {
                 const file = e.target.files?.[0];
@@ -112,7 +128,7 @@ export default function ImportModal() {
           )}
 
           {loading && (
-            <div className="text-center text-sm text-app-muted">Importing…</div>
+            <div className="text-center text-sm text-app-muted">Importing...</div>
           )}
         </div>
       </div>

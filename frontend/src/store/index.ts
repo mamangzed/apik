@@ -23,6 +23,7 @@ import {
 import { apiClient } from '../lib/apiClient';
 import { sendRequestWithSmartTransport } from '../lib/requestTransport';
 import { getWsInterceptUrl } from '../lib/runtimeConfig';
+import { ImportSourceFormat } from '../lib/collectionTransfer';
 import {
   clearLocalData,
   getLocalCollections,
@@ -184,7 +185,7 @@ interface AppState {
   reorderRequestInCollection: (collectionId: string, sourceRequestId: string, targetRequestId: string) => Promise<void>;
   updateRequestInCollection: (collectionId: string, request: ApiRequest) => Promise<'remote' | 'local'>;
   deleteRequestFromCollection: (collectionId: string, requestId: string) => Promise<void>;
-  importCollection: (data: unknown, format: string) => Promise<void>;
+  importCollection: (data: unknown, format: ImportSourceFormat | 'apix') => Promise<void>;
   updateCollectionShareAccess: (collectionId: string, target: 'collection' | 'docs', access: VisibilityMode) => Promise<Collection>;
   loadCollectionMembers: (collectionId: string) => Promise<CollectionMember[]>;
   upsertCollectionMember: (collectionId: string, userId: string, role: CollectionMemberRole) => Promise<CollectionMember[]>;
