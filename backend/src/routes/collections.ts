@@ -25,6 +25,13 @@ function canEditCollection(role: 'owner' | 'editor' | 'viewer'): boolean {
 
 type ImportFormat = 'auto' | 'apik' | 'postman' | 'openapi' | 'insomnia' | 'har';
 type UnknownRecord = Record<string, unknown>;
+type ImportedCollectionDraft = {
+  name: string;
+  description: string;
+  requests: Partial<ApiRequest>[];
+  folders: Collection['folders'];
+  variables: Collection['variables'];
+};
 
 const HTTP_METHODS = new Set(['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS']);
 const MAX_IMPORTED_REQUESTS = 5000;
@@ -338,7 +345,7 @@ function parseOpenApiParams(pathParams: unknown, operationParams: unknown, locat
     .filter((entry) => entry.key.trim().length > 0);
 }
 
-function extractOpenApiCollection(data: unknown): Partial<Collection> {
+function extractOpenApiCollection(data: unknown): ImportedCollectionDraft {
   const doc = isRecord(data) ? data : {};
   const info = isRecord(doc.info) ? doc.info : {};
   const paths = isRecord(doc.paths) ? doc.paths : {};
@@ -379,12 +386,12 @@ function extractOpenApiCollection(data: unknown): Partial<Collection> {
     name: asString(info.title, 'OpenAPI Collection'),
     description: asString(info.description),
     requests,
-    folders: [],
-    variables: [],
+    folders: [] as Collection['folders'],
+    variables: [] as Collection['variables'],
   };
 }
 
-function extractInsomniaCollection(data: unknown): Partial<Collection> {
+function extractInsomniaCollection(data: unknown): ImportedCollectionDraft {
   const doc = isRecord(data) ? data : {};
   const resources = asArray<UnknownRecord>(doc.resources);
   const workspace = resources.find((resource) => resource._type === 'workspace');
@@ -439,12 +446,12 @@ function extractInsomniaCollection(data: unknown): Partial<Collection> {
     name: asString(workspace?.name, 'Imported Insomnia Collection'),
     description: '',
     requests,
-    folders: [],
-    variables: [],
+    folders: [] as Collection['folders'],
+    variables: [] as Collection['variables'],
   };
 }
 
-function extractHarCollection(data: unknown): Partial<Collection> {
+function extractHarCollection(data: unknown): ImportedCollectionDraft {
   const doc = isRecord(data) ? data : {};
   const log = isRecord(doc.log) ? doc.log : {};
   const entries = asArray<UnknownRecord>(log.entries);
@@ -490,7 +497,7 @@ function extractHarCollection(data: unknown): Partial<Collection> {
         params: normalizeKeyValuePairs(request.queryString, 'name', 'value'),
         headers,
         body,
-        auth: { type: 'none' },
+        auth: { type: 'none' as const },
       };
     })
     .filter((request) => asString(request.url).length > 0);
@@ -499,8 +506,8 @@ function extractHarCollection(data: unknown): Partial<Collection> {
     name: 'Imported HAR Collection',
     description: '',
     requests,
-    folders: [],
-    variables: [],
+    folders: [] as Collection['folders'],
+    variables: [] as Collection['variables'],
   };
 }
 
@@ -568,15 +575,15 @@ function buildImportedCollection(data: unknown, format: ImportFormat, userId: st
   const detectedFormat = format === 'auto' ? detectImportFormat(data) : format;
   const payload = isRecord(data) ? data : {};
 
-  let parsed: Partial<Collection>;
+  let parsed: ImportedCollectionDraft;
   if (detectedFormat === 'postman') {
     const info = isRecord(payload.info) ? payload.info : {};
     parsed = {
       name: asString(info.name, 'Imported Collection'),
       description: asString(info.description),
       requests: extractPostmanRequests(payload.item),
-      folders: [],
-      variables: [],
+      folders: [] as Collection['folders'],
+      variables: [] as Collection['variables'],
     };
   } else if (detectedFormat === 'openapi') {
     parsed = extractOpenApiCollection(payload);
@@ -589,12 +596,12 @@ function buildImportedCollection(data: unknown, format: ImportFormat, userId: st
       name: asString(payload.name, 'Imported Collection'),
       description: asString(payload.description),
       requests: asArray<Partial<ApiRequest>>(payload.requests),
-      folders: asArray(payload.folders),
+      folders: asArray<Collection['folders'][number]>(payload.folders),
       variables: normalizeKeyValuePairs(payload.variables),
     };
   }
 
-  const sourceRequests = asArray<Partial<ApiRequest>>(parsed.requests);
+  const sourceRequests = parsed.requests;
   if (sourceRequests.length > MAX_IMPORTED_REQUESTS) {
     throw new Error(`Import exceeds limit (${MAX_IMPORTED_REQUESTS} requests)`);
   }
