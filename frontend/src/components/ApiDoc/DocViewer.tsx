@@ -160,7 +160,7 @@ function RequestDoc({
               rows={(request.formConfig.fields || []).map((field) => [
                 field.label,
                 <code key={`${field.id}-type`} className="text-app-muted">{field.type}</code>,
-                <code key={`${field.id}-map`} className="text-blue-300">{field.target} -> {field.targetKey}</code>,
+                <code key={`${field.id}-map`} className="text-blue-300">{field.target}{' -> '}{field.targetKey}</code>,
                 [
                   field.required ? 'required' : 'optional',
                   field.min !== undefined ? `min:${field.min}` : '',

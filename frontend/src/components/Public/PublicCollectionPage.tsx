@@ -1090,7 +1090,7 @@ export default function PublicCollectionPage() {
                                 />
                               )}
                               {field.description && <span className="block mt-1 text-[11px] text-app-muted">{field.description}</span>}
-                              <span className="block mt-1 text-[11px] text-app-muted font-mono">map: {field.target} -> {field.targetKey}</span>
+                              <span className="block mt-1 text-[11px] text-app-muted font-mono">map: {field.target}{' -> '}{field.targetKey}</span>
                             </label>
                           );
                               })}

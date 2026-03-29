@@ -201,7 +201,7 @@ export default function PublicDocsPage() {
                       {(request.formConfig.fields || []).map((field) => (
                         <div key={field.id} className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 px-4 py-2 text-sm border-t border-app-border first:border-t-0">
                           <span className="text-blue-300 font-mono sm:min-w-32 break-all">{field.label}</span>
-                          <span className="text-app-muted font-mono break-all">{field.type} | {field.target} -> {field.targetKey}</span>
+                          <span className="text-app-muted font-mono break-all">{field.type} | {field.target}{' -> '}{field.targetKey}</span>
                           {field.group && <span className="text-[11px] text-cyan-300">group:{field.group}</span>}
                           {field.required && <span className="text-[11px] text-red-300">required</span>}
                           {field.repeatable && <span className="text-[11px] text-amber-300">array:{field.repeatSeparator || 'newline'}</span>}
