@@ -22,6 +22,8 @@ import {
   Search,
   X as XIcon,
   Link2,
+  Maximize2,
+  Minimize2,
 } from 'lucide-react';
 import { useAppStore } from '../../store';
 import { ApiRequest, HttpMethod, InterceptedRequest } from '../../types';
@@ -193,11 +195,13 @@ export default function InterceptPanel() {
   const [mappingMatches, setMappingMatches] = useState<MappingMatch[]>([]);
   const [selectedMatchId, setSelectedMatchId] = useState<string | null>(null);
   const [mappingMode, setMappingMode] = useState<'pair' | 'global'>('pair');
+  const [mappingModalMaximized, setMappingModalMaximized] = useState(false);
   const [flowLayout, setFlowLayout] = useState<'horizontal' | 'vertical'>('horizontal');
   const [showHostInPreview, setShowHostInPreview] = useState(true);
   const [showOnlyMatchedRequests, setShowOnlyMatchedRequests] = useState(false);
   const [compactFlowPreview, setCompactFlowPreview] = useState(false);
   const [compactPreferenceSet, setCompactPreferenceSet] = useState(false);
+  const [expandedFlowNodeIds, setExpandedFlowNodeIds] = useState<string[]>([]);
   const [isNarrowScreen, setIsNarrowScreen] = useState(false);
   const [targetCollectionId, setTargetCollectionId] = useState<string | null>(null);
   const [targetPlacement, setTargetPlacement] = useState<'header' | 'param' | 'body'>('header');
@@ -693,6 +697,8 @@ export default function InterceptPanel() {
     setTargetKey(defaultKey);
     setEnvKey(normalizeEnvKey(defaultKey || value));
     setMappingMode('pair');
+    setMappingModalMaximized(false);
+    setExpandedFlowNodeIds([]);
     setMappingOpen(true);
   };
 
@@ -938,31 +944,43 @@ export default function InterceptPanel() {
         }
 
         const envName = normalizeEnvKey(envKey || targetKey || mappingValue);
-        const sourceRequest = buildRequestFromIntercept(match.request);
-        const targetRequest = buildRequestFromIntercept(selected);
         const sourceScript = buildSourceScript(match, envName, mappingValue);
-        if (sourceScript.stage === 'pre') {
-          sourceRequest.preRequestScript = sourceRequest.preRequestScript
-            ? `${sourceRequest.preRequestScript}\n\n${sourceScript.script}`
-            : sourceScript.script;
-        } else {
-          sourceRequest.testScript = sourceRequest.testScript
-            ? `${sourceRequest.testScript}\n\n${sourceScript.script}`
-            : sourceScript.script;
+        const pairChain = buildPairChainRequests(selectedMatchId);
+        if (pairChain.length === 0) {
+          toast.error('No flow candidates found');
+          return;
         }
 
-        applyTargetMapping(targetRequest, envName, targetPlacement, targetKey, mappingValue);
+        let index = 1;
+        for (const request of pairChain) {
+          const entry = buildRequestFromIntercept(request);
 
-        await addRequestToCollection(targetCollectionId, {
-          ...sourceRequest,
-          name: `1. ${sourceRequest.name}`,
-        });
-        await addRequestToCollection(targetCollectionId, {
-          ...targetRequest,
-          name: `2. ${targetRequest.name}`,
-          preRequestScript: targetRequest.preRequestScript || '',
-        });
-        toast.success('Flow added to collection');
+          if (request.id === match.request.id) {
+            if (sourceScript.stage === 'pre') {
+              entry.preRequestScript = entry.preRequestScript
+                ? `${entry.preRequestScript}\n\n${sourceScript.script}`
+                : sourceScript.script;
+            } else {
+              entry.testScript = entry.testScript
+                ? `${entry.testScript}\n\n${sourceScript.script}`
+                : sourceScript.script;
+            }
+          } else {
+            replaceValueInRequest(entry, mappingValue, envName);
+          }
+
+          if (request.id === selected.id) {
+            applyTargetMapping(entry, envName, targetPlacement, targetKey, mappingValue);
+          }
+
+          await addRequestToCollection(targetCollectionId, {
+            ...entry,
+            name: `${index}. ${entry.name}`,
+          });
+          index += 1;
+        }
+
+        toast.success(`Flow added with ${pairChain.length} requests`);
       }
       setMappingOpen(false);
     } catch (error) {
@@ -1193,6 +1211,11 @@ export default function InterceptPanel() {
     ].filter(Boolean).join('\n');
   };
 
+  const truncateFlowText = (value: string, limit = 220) => {
+    if (!value) return '';
+    return value.length > limit ? `${value.slice(0, limit)}...` : value;
+  };
+
   const matchedRequestIds = useMemo(() => (
     new Set(mappingMatches.map((match) => match.request.id))
   ), [mappingMatches]);
@@ -1203,6 +1226,41 @@ export default function InterceptPanel() {
     }
     return mappingMatches[0]?.request.id || null;
   }, [mappingMatches, selectedMatchId]);
+
+  const buildPairChainRequests = (matchId: string | null) => {
+    const selectedMatch = mappingMatches.find((match) => match.id === matchId) || null;
+    const uniqueMatchedRequests: InterceptedRequest[] = [];
+    const seenMatched = new Set<string>();
+    mappingMatches
+      .slice()
+      .sort((a, b) => a.request.timestamp - b.request.timestamp)
+      .forEach((match) => {
+        if (seenMatched.has(match.request.id)) {
+          return;
+        }
+        seenMatched.add(match.request.id);
+        uniqueMatchedRequests.push(match.request);
+      });
+
+    const sourceTs = selectedMatch?.request.timestamp;
+    const targetTs = selected?.timestamp;
+    let result = uniqueMatchedRequests;
+
+    if (typeof sourceTs === 'number' && typeof targetTs === 'number') {
+      const minTs = Math.min(sourceTs, targetTs);
+      const maxTs = Math.max(sourceTs, targetTs);
+      result = uniqueMatchedRequests.filter((request) => request.timestamp >= minTs && request.timestamp <= maxTs);
+    }
+
+    if (selected && !result.some((request) => request.id === selected.id)) {
+      result = [...result, selected];
+    }
+
+    return result
+      .slice()
+      .sort((a, b) => a.timestamp - b.timestamp)
+      .filter((request, index, arr) => arr.findIndex((item) => item.id === request.id) === index);
+  };
 
   const flowPreviewRequests = useMemo(() => {
     if (mappingMatches.length === 0) {
@@ -1226,16 +1284,8 @@ export default function InterceptPanel() {
       return result.filter((request) => matchedRequestIds.has(request.id));
     }
 
-    const selectedMatch = mappingMatches.find((match) => match.id === selectedMatchId) || null;
-    const candidates = [selectedMatch?.request, selected].filter(Boolean) as InterceptedRequest[];
-    const seen = new Set<string>();
-    const result = candidates
-      .filter((request) => {
-        if (seen.has(request.id)) return false;
-        seen.add(request.id);
-        return true;
-      })
-      .sort((a, b) => a.timestamp - b.timestamp);
+    const result = buildPairChainRequests(selectedMatchId);
+
     if (!showOnlyMatchedRequests) return result;
     return result.filter((request) => matchedRequestIds.has(request.id));
   }, [mappingMatches, mappingMode, matchedRequestIds, selected, selectedMatchId, showOnlyMatchedRequests]);
@@ -1257,6 +1307,14 @@ export default function InterceptPanel() {
     if (status >= 400 && status < 500) return 'bg-amber-400';
     if (status >= 500) return 'bg-rose-400';
     return 'bg-app-border';
+  };
+
+  const toggleFlowNodeExpanded = (requestId: string) => {
+    setExpandedFlowNodeIds((prev) => (
+      prev.includes(requestId)
+        ? prev.filter((id) => id !== requestId)
+        : [...prev, requestId]
+    ));
   };
 
   const getEditorSelectionText = (editor: { getSelection: () => unknown; getModel: () => unknown; getPosition: () => unknown }) => {
@@ -2395,18 +2453,31 @@ export default function InterceptPanel() {
       )}
     </div>
     {mappingOpen && (
-      <div className="fixed inset-0 z-[80] bg-black/60 flex items-center justify-center p-4">
-        <div className="w-full max-w-3xl bg-app-panel border border-app-border rounded-lg shadow-2xl overflow-hidden">
+      <div className={`fixed inset-0 z-[80] bg-black/60 ${mappingModalMaximized ? 'p-2' : 'flex items-center justify-center p-4'}`}>
+        <div className={`bg-app-panel border border-app-border shadow-2xl overflow-hidden flex flex-col ${
+          mappingModalMaximized
+            ? 'w-full h-full rounded-none'
+            : 'w-full max-w-3xl h-[calc(100vh-2rem)] rounded-lg'
+        }`}>
           <div className="px-4 py-3 border-b border-app-border bg-app-sidebar flex items-center justify-between">
             <h3 className="text-sm font-semibold text-app-text">Request Flow Mapper</h3>
-            <button
-              onClick={() => setMappingOpen(false)}
-              className="p-1 rounded hover:bg-app-hover text-app-muted hover:text-app-text"
-            >
-              <XIcon size={14} />
-            </button>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setMappingModalMaximized((prev) => !prev)}
+                className="p-1 rounded hover:bg-app-hover text-app-muted hover:text-app-text"
+                title={mappingModalMaximized ? 'Minimize' : 'Maximize'}
+              >
+                {mappingModalMaximized ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+              </button>
+              <button
+                onClick={() => setMappingOpen(false)}
+                className="p-1 rounded hover:bg-app-hover text-app-muted hover:text-app-text"
+              >
+                <XIcon size={14} />
+              </button>
+            </div>
           </div>
-          <div className="p-4 space-y-4">
+          <div className="p-4 space-y-4 overflow-y-auto min-h-0 flex-1">
             <div className="text-[11px] text-app-muted">
               Mode: {mappingMode === 'global' ? 'Global flow (first to last)' : 'Pair mapping'}
             </div>
@@ -2614,6 +2685,7 @@ export default function InterceptPanel() {
                       {flowPreviewRequests.map((request, index) => {
                         const label = formatFlowLabel(request);
                         const isHighlighted = highlightedRequestId === request.id;
+                        const isExpanded = expandedFlowNodeIds.includes(request.id);
                         const hasResponse = Boolean(
                           request.responseStatusCode
                           || request.responseBody
@@ -2625,11 +2697,15 @@ export default function InterceptPanel() {
 
                         return (
                           <div key={request.id} className={flowLayout === 'horizontal' ? 'flex items-center' : 'flex flex-col'}>
-                            <div className="space-y-2">
-                              <div className={`border rounded px-3 py-2 text-xs ${
+                            <div
+                              className="space-y-2 cursor-pointer"
+                              onClick={() => toggleFlowNodeExpanded(request.id)}
+                              title="Click to show/hide request and response details"
+                            >
+                              <div className={`border rounded px-3 py-2 text-xs transition-colors ${
                                 isHighlighted
                                   ? 'border-app-accent bg-app-active'
-                                  : 'border-app-border bg-app-panel'
+                                  : 'border-app-border bg-app-panel hover:bg-app-hover/40'
                               }`}>
                                 <div className="flex items-center gap-2">
                                   <span className="px-1.5 py-0.5 rounded bg-app-hover text-app-muted">REQ</span>
@@ -2651,6 +2727,37 @@ export default function InterceptPanel() {
                                   </div>
                                 )}
                               </div>
+                              {isExpanded && (
+                                <div className="border border-app-border rounded bg-app-bg px-3 py-2 text-[11px] space-y-2">
+                                  <div className="text-app-muted uppercase tracking-wider">Request detail</div>
+                                  <div className="text-app-text break-all">{request.method} {request.url}</div>
+                                  <div className="text-app-muted">
+                                    Headers: {Object.keys(request.headers || {}).length}
+                                  </div>
+                                  {request.body ? (
+                                    <div className="text-app-muted break-words">
+                                      Body: {truncateFlowText(String(request.body))}
+                                    </div>
+                                  ) : (
+                                    <div className="text-app-muted">Body: (empty)</div>
+                                  )}
+
+                                  <div className="pt-1 text-app-muted uppercase tracking-wider">Response detail</div>
+                                  <div className="text-app-muted">
+                                    Status: {request.responseStatusCode ? `HTTP ${request.responseStatusCode}` : 'Pending'}
+                                  </div>
+                                  <div className="text-app-muted">
+                                    Headers: {Object.keys(request.responseHeaders || {}).length}
+                                  </div>
+                                  {request.responseBody ? (
+                                    <div className="text-app-muted break-words">
+                                      Body: {truncateFlowText(String(request.responseBody))}
+                                    </div>
+                                  ) : (
+                                    <div className="text-app-muted">Body: (empty)</div>
+                                  )}
+                                </div>
+                              )}
                             </div>
                             {index < flowPreviewRequests.length - 1 && (
                               flowLayout === 'horizontal' ? (
