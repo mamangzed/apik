@@ -357,14 +357,15 @@ export default function PublicCollectionPage() {
 
         const applied = applyFormToRequest(request, mergedValues, responses);
         if (applied.error) {
+          const errorMessage = applied.error || 'Form validation error';
           setResponses((previous) => ({
             ...previous,
             [request.id]: {
               status: 0,
               statusText: 'Form Validation Error',
               headers: {},
-              body: applied.error,
-              size: applied.error.length,
+              body: errorMessage,
+              size: errorMessage.length,
               time: 0,
               error: 'FORM_INVALID',
             },
