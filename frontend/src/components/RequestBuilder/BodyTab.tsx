@@ -4,7 +4,7 @@ import { BodyType, KeyValuePair } from '../../types';
 import { KVTable } from './ParamsTab';
 import Editor from '@monaco-editor/react';
 import { v4 as uuidv4 } from 'uuid';
-import { Wand2 } from 'lucide-react';
+import { Copy, Wand2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { beautifyContent, canBeautifyContent } from '../../utils/format';
 
@@ -67,6 +67,15 @@ export default function BodyTab() {
     toast.success('Request body beautified');
   };
 
+  const handleCopyBody = async () => {
+    try {
+      await navigator.clipboard.writeText(body.content || '');
+      toast.success('Request body copied');
+    } catch {
+      toast.error('Failed to copy body');
+    }
+  };
+
   return (
     <div className="flex flex-col h-full overflow-hidden">
       {/* Body type selector */}
@@ -87,16 +96,26 @@ export default function BodyTab() {
           ))}
         </div>
 
-        {(body.type === 'json' || body.type === 'xml' || body.type === 'graphql') && (
+        <div className="flex items-center gap-2">
           <button
-            onClick={handleBeautify}
+            onClick={handleCopyBody}
             className="flex items-center gap-1.5 px-2.5 py-1 text-xs rounded border border-app-border text-app-muted hover:text-app-text hover:bg-app-hover transition-colors flex-shrink-0"
-            title="Beautify request body"
+            title="Copy request body"
           >
-            <Wand2 size={12} />
-            Beautify
+            <Copy size={12} />
+            Copy
           </button>
-        )}
+          {(body.type === 'json' || body.type === 'xml' || body.type === 'graphql') && (
+            <button
+              onClick={handleBeautify}
+              className="flex items-center gap-1.5 px-2.5 py-1 text-xs rounded border border-app-border text-app-muted hover:text-app-text hover:bg-app-hover transition-colors flex-shrink-0"
+              title="Beautify request body"
+            >
+              <Wand2 size={12} />
+              Beautify
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Body Content */}

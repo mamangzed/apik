@@ -21,9 +21,10 @@ import {
   Zap,
   Search,
   X as XIcon,
+  Link2,
 } from 'lucide-react';
 import { useAppStore } from '../../store';
-import { HttpMethod, InterceptedRequest } from '../../types';
+import { ApiRequest, HttpMethod, InterceptedRequest } from '../../types';
 import { METHOD_BG_COLORS, beautifyContent, canBeautifyContent, detectLanguage } from '../../utils/format';
 import { getWsInterceptUrl } from '../../lib/runtimeConfig';
 import { apiClient } from '../../lib/apiClient';
@@ -187,6 +188,18 @@ export default function InterceptPanel() {
   const [detailTab, setDetailTab] = useState<'summary' | 'request' | 'response' | 'collection'>('summary');
   const [savingCollectionId, setSavingCollectionId] = useState<string | null>(null);
   const [beautifiedResponseBody, setBeautifiedResponseBody] = useState<string | null>(null);
+  const [mappingOpen, setMappingOpen] = useState(false);
+  const [mappingValue, setMappingValue] = useState('');
+  const [mappingMatches, setMappingMatches] = useState<MappingMatch[]>([]);
+  const [selectedMatchId, setSelectedMatchId] = useState<string | null>(null);
+  const [targetCollectionId, setTargetCollectionId] = useState<string | null>(null);
+  const [targetPlacement, setTargetPlacement] = useState<'header' | 'param' | 'body'>('header');
+  const [targetKey, setTargetKey] = useState('');
+  const [envKey, setEnvKey] = useState('');
+  const [requestValueInput, setRequestValueInput] = useState('');
+  const [responseValueInput, setResponseValueInput] = useState('');
+  const [requestJsonKey, setRequestJsonKey] = useState('');
+  const [responseJsonKey, setResponseJsonKey] = useState('');
   const searchInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -402,6 +415,389 @@ export default function InterceptPanel() {
     }
   };
 
+  type MappingSource = 'response-header' | 'response-body';
+
+  interface MappingMatch {
+    id: string;
+    request: InterceptedRequest;
+    source: MappingSource;
+    key?: string;
+    jsonPath?: string;
+    preview: string;
+  }
+
+  const normalizeEnvKey = (value: string) => value
+    .trim()
+    .replace(/[^a-zA-Z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .toLowerCase() || 'mapped_value';
+
+  const findJsonPath = (obj: unknown, needle: string, base = '$'): string | null => {
+    if (obj == null) {
+      return null;
+    }
+    if (typeof obj === 'string' || typeof obj === 'number' || typeof obj === 'boolean') {
+      return String(obj) === needle ? base : null;
+    }
+    if (Array.isArray(obj)) {
+      for (let i = 0; i < obj.length; i += 1) {
+        const found = findJsonPath(obj[i], needle, `${base}[${i}]`);
+        if (found) return found;
+      }
+      return null;
+    }
+    if (typeof obj === 'object') {
+      for (const [key, value] of Object.entries(obj as Record<string, unknown>)) {
+        const found = findJsonPath(value, needle, `${base}.${key}`);
+        if (found) return found;
+      }
+    }
+    return null;
+  };
+
+  const detectJsonValueByKey = (obj: unknown, key: string, base = '$'): { path: string; value: string } | null => {
+    if (!obj || typeof obj !== 'object') {
+      return null;
+    }
+    if (Array.isArray(obj)) {
+      for (let i = 0; i < obj.length; i += 1) {
+        const found = detectJsonValueByKey(obj[i], key, `${base}[${i}]`);
+        if (found) return found;
+      }
+      return null;
+    }
+    const record = obj as Record<string, unknown>;
+    for (const [field, value] of Object.entries(record)) {
+      if (field === key && value != null) {
+        return { path: `${base}.${field}`, value: String(value) };
+      }
+      const nested = detectJsonValueByKey(value, key, `${base}.${field}`);
+      if (nested) return nested;
+    }
+    return null;
+  };
+
+  const detectParamValue = (urlText: string, key: string): string | null => {
+    try {
+      const parsed = new URL(urlText);
+      return parsed.searchParams.get(key);
+    } catch {
+      return null;
+    }
+  };
+
+  const findMatchesForValue = (value: string, excludeId?: string): MappingMatch[] => {
+    const trimmed = value.trim();
+    if (!trimmed) return [];
+
+    const matches: MappingMatch[] = [];
+    const ordered = [...interceptedRequests].sort((a, b) => b.timestamp - a.timestamp);
+    ordered.forEach((request) => {
+      if (excludeId && request.id === excludeId) {
+        return;
+      }
+
+      const headers = request.responseHeaders || {};
+      Object.entries(headers).forEach(([key, headerValue]) => {
+        const text = String(headerValue ?? '');
+        if (text === trimmed || text.includes(trimmed)) {
+          matches.push({
+            id: `${request.id}-header-${key}`,
+            request,
+            source: 'response-header',
+            key,
+            preview: `${key}: ${text}`,
+          });
+        }
+      });
+
+      if (request.responseBody) {
+        const bodyText = String(request.responseBody);
+        if (bodyText.includes(trimmed)) {
+          let jsonPath: string | null = null;
+          try {
+            const parsed = JSON.parse(bodyText);
+            jsonPath = findJsonPath(parsed, trimmed);
+          } catch {
+            jsonPath = null;
+          }
+          matches.push({
+            id: `${request.id}-body-${jsonPath || 'text'}`,
+            request,
+            source: 'response-body',
+            jsonPath: jsonPath || undefined,
+            preview: jsonPath ? `${jsonPath} = ${trimmed}` : `Body contains ${trimmed}`,
+          });
+        }
+      }
+    });
+
+    return matches;
+  };
+
+  const openMappingModal = (value: string, options?: { placement?: 'header' | 'param' | 'body'; key?: string }) => {
+    if (!selected) return;
+    const matches = findMatchesForValue(value, selected.id);
+    const defaultMatch = matches.find((match) => match.request.timestamp < selected.timestamp) || matches[0] || null;
+    setMappingValue(value);
+    setMappingMatches(matches);
+    setSelectedMatchId(defaultMatch ? defaultMatch.id : null);
+    const defaultKey = options?.key
+      || Object.entries(selected.headers || {}).find(([, headerValue]) => String(headerValue) === value)?.[0]
+      || defaultMatch?.key
+      || '';
+    const placement = options?.placement || 'header';
+    setTargetPlacement(placement);
+    setTargetKey(defaultKey);
+    setEnvKey(normalizeEnvKey(defaultKey || value));
+    setMappingOpen(true);
+  };
+
+  const handleContextMap = (
+    event: React.MouseEvent,
+    value: string,
+    placement: 'header' | 'param' | 'body' = 'header',
+    key?: string,
+  ) => {
+    event.preventDefault();
+    openMappingModal(value, { placement, key });
+  };
+
+  const buildRequestFromIntercept = (request: InterceptedRequest, overrides?: Partial<InterceptedRequest>): Partial<ApiRequest> => {
+    const base = overrides ? { ...request, ...overrides } : request;
+    const contentType = (base.headers['content-type'] || base.headers['Content-Type'] || '').toLowerCase();
+    const bodyType = base.body
+      ? (contentType.includes('json')
+        ? 'json'
+        : contentType.includes('xml')
+          ? 'xml'
+          : contentType.includes('graphql')
+            ? 'graphql'
+            : 'text')
+      : 'none';
+
+    const headerEntries = Object.entries(base.headers || {}).map(([key, value], index) => ({
+      id: `${base.id}-h-${index}`,
+      key,
+      value: String(value),
+      enabled: true,
+    }));
+
+    let requestName = `${base.method} Request`;
+    try {
+      const parsed = new URL(base.url);
+      requestName = `${base.method} ${parsed.pathname || '/'}`;
+    } catch {
+      requestName = `${base.method} ${safeHostname(base.url) || 'Request'}`;
+    }
+
+    return {
+      name: requestName,
+      method: (base.method || 'GET') as HttpMethod,
+      url: base.url,
+      headers: headerEntries,
+      params: [],
+      body: {
+        type: bodyType,
+        content: base.body || '',
+      },
+    };
+  };
+
+  const buildSourceScript = (match: MappingMatch, envName: string) => {
+    if (match.source === 'response-header' && match.key) {
+      return `const value = apik.response.header('${match.key}');\nif (value) apik.env.set('${envName}', String(value));`;
+    }
+    if (match.source === 'response-body' && match.jsonPath) {
+      return `const json = apik.response.json();\nconst value = ${match.jsonPath.replace(/^\$\.?/, 'json.')};\nif (value != null) apik.env.set('${envName}', String(value));`;
+    }
+    return `const value = apik.response.text();\nif (value) apik.env.set('${envName}', String(value));`;
+  };
+
+  const applyTargetMapping = (
+    request: ReturnType<typeof buildRequestFromIntercept>,
+    envName: string,
+    placement: 'header' | 'param' | 'body',
+    key: string,
+    value: string,
+  ) => {
+    const placeholder = `{{${envName}}}`;
+    if (placement === 'header') {
+      request.headers = request.headers || [];
+      const existing = request.headers.find((header) => header.key === key);
+      if (existing) {
+        existing.value = placeholder;
+      } else if (key) {
+        request.headers.push({ id: `mapped-${key}`, key, value: placeholder, enabled: true });
+      }
+      return request;
+    }
+    if (placement === 'param') {
+      request.params = request.params || [];
+      const existing = request.params.find((param) => param.key === key);
+      if (existing) {
+        existing.value = placeholder;
+      } else if (key) {
+        request.params.push({ id: `mapped-${key}`, key, value: placeholder, enabled: true });
+      }
+      return request;
+    }
+    if (placement === 'body') {
+      const currentBody = request.body || { type: 'text' as const, content: '' };
+      const currentContent = currentBody.content || '';
+      request.body = {
+        ...currentBody,
+        type: currentBody.type || 'text',
+        content: currentContent.includes(value)
+          ? currentContent.split(value).join(placeholder)
+          : currentContent,
+      };
+      return request;
+    }
+    return request;
+  };
+
+  const handleAddFlowToCollection = async () => {
+    if (!selected || !targetCollectionId || !mappingValue.trim()) {
+      return;
+    }
+    const match = mappingMatches.find((item) => item.id === selectedMatchId) || null;
+    if (!match) {
+      toast.error('Select a source match first');
+      return;
+    }
+
+    const envName = normalizeEnvKey(envKey || targetKey || mappingValue);
+    const sourceRequest = buildRequestFromIntercept(match.request);
+    const targetRequest = buildRequestFromIntercept(selected);
+
+    sourceRequest.testScript = sourceRequest.testScript
+      ? `${sourceRequest.testScript}\n\n${buildSourceScript(match, envName)}`
+      : buildSourceScript(match, envName);
+
+    applyTargetMapping(targetRequest, envName, targetPlacement, targetKey, mappingValue);
+
+    try {
+      setSavingCollectionId(targetCollectionId);
+      await addRequestToCollection(targetCollectionId, {
+        ...sourceRequest,
+        name: `1. ${sourceRequest.name}`,
+      });
+      await addRequestToCollection(targetCollectionId, {
+        ...targetRequest,
+        name: `2. ${targetRequest.name}`,
+        preRequestScript: targetRequest.preRequestScript || '',
+      });
+      toast.success('Flow added to collection');
+      setMappingOpen(false);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to add flow');
+    } finally {
+      setSavingCollectionId(null);
+    }
+  };
+
+  const resolveAutoCollectionId = () => {
+    if (targetCollectionId) {
+      return targetCollectionId;
+    }
+    if (collections.length === 1) {
+      return collections[0].id;
+    }
+    return null;
+  };
+
+  const pickBestMatch = (matches: MappingMatch[], current: InterceptedRequest) => {
+    if (matches.length === 0) {
+      return null;
+    }
+    const earlier = matches.filter((match) => match.request.timestamp < current.timestamp);
+    if (earlier.length > 0) {
+      return earlier.sort((a, b) => b.request.timestamp - a.request.timestamp)[0];
+    }
+    return matches[0];
+  };
+
+  const handleAutoFlow = async (value: string, key?: string, placementOverride?: 'header' | 'param' | 'body') => {
+    if (!selected) {
+      return;
+    }
+    let trimmed = value.trim();
+    let detectedKey = key || '';
+
+    if (!trimmed && detectedKey) {
+      const fromParam = detectParamValue(selected.url, detectedKey);
+      if (fromParam) {
+        trimmed = fromParam;
+      }
+      if (!trimmed && editedBody) {
+        try {
+          const parsed = JSON.parse(editedBody);
+          const found = detectJsonValueByKey(parsed, detectedKey);
+          if (found) {
+            trimmed = found.value;
+          }
+        } catch {
+          // ignore
+        }
+      }
+    }
+
+    if (!trimmed) {
+      toast.error('Value is empty');
+      return;
+    }
+
+    const matches = findMatchesForValue(trimmed, selected.id);
+    const match = pickBestMatch(matches, selected);
+    if (!match) {
+      toast.error('No source match found for this value');
+      return;
+    }
+
+    const collectionId = resolveAutoCollectionId();
+    if (!collectionId) {
+      setMappingValue(trimmed);
+      setMappingMatches(matches);
+      setSelectedMatchId(match.id);
+      setTargetPlacement(key ? 'header' : 'body');
+      setTargetKey(key || '');
+      setEnvKey(normalizeEnvKey(key || trimmed));
+      setMappingOpen(true);
+      toast('Select a collection to finalize the flow');
+      return;
+    }
+
+    const envName = normalizeEnvKey(detectedKey || trimmed);
+    const sourceRequest = buildRequestFromIntercept(match.request);
+    const targetRequest = buildRequestFromIntercept(selected);
+
+    sourceRequest.testScript = sourceRequest.testScript
+      ? `${sourceRequest.testScript}\n\n${buildSourceScript(match, envName)}`
+      : buildSourceScript(match, envName);
+
+    const placement: 'header' | 'body' | 'param' = placementOverride || (detectedKey ? 'header' : 'body');
+    applyTargetMapping(targetRequest, envName, placement, detectedKey || '', trimmed);
+
+    try {
+      setSavingCollectionId(collectionId);
+      await addRequestToCollection(collectionId, {
+        ...sourceRequest,
+        name: `1. ${sourceRequest.name}`,
+      });
+      await addRequestToCollection(collectionId, {
+        ...targetRequest,
+        name: `2. ${targetRequest.name}`,
+        preRequestScript: targetRequest.preRequestScript || '',
+      });
+      toast.success('Auto flow added to collection');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to add flow');
+    } finally {
+      setSavingCollectionId(null);
+    }
+  };
+
   const checkProxyHealth = async () => {
     if (!isAuthenticated) {
       return;
@@ -423,6 +819,10 @@ export default function InterceptPanel() {
     setEditedBody(request.body || '');
     setBeautifiedResponseBody(null);
     setDetailTab('summary');
+    setRequestValueInput('');
+    setResponseValueInput('');
+    setRequestJsonKey('');
+    setResponseJsonKey('');
   };
 
   const handleBeautifyBody = () => {
@@ -441,7 +841,96 @@ export default function InterceptPanel() {
     setBeautifiedResponseBody(beautifyContent(selected.responseBody, language, contentType));
   };
 
+  const parseEditedHeaders = (): Record<string, string> => {
+    try {
+      const parsed = JSON.parse(editedHeaders || '{}');
+      if (parsed && typeof parsed === 'object') {
+        return Object.entries(parsed as Record<string, unknown>).reduce<Record<string, string>>((acc, [key, value]) => {
+          acc[key] = String(value ?? '');
+          return acc;
+        }, {});
+      }
+    } catch {
+      // Ignore parse errors.
+    }
+    return {};
+  };
+
+  const getUrlParams = (urlText: string) => {
+    try {
+      const parsed = new URL(urlText);
+      return Array.from(parsed.searchParams.entries());
+    } catch {
+      return [] as Array<[string, string]>;
+    }
+  };
+
+  const listJsonKeys = (text: string) => {
+    try {
+      const parsed = JSON.parse(text);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return Object.entries(parsed as Record<string, unknown>)
+          .filter(([key]) => typeof key === 'string')
+          .map(([key, value]) => ({ key, value: String(value ?? '') }));
+      }
+    } catch {
+      // ignore parse errors
+    }
+    return [] as Array<{ key: string; value: string }>;
+  };
+
+  const getEditorSelectionText = (editor: { getSelection: () => unknown; getModel: () => unknown; getPosition: () => unknown }) => {
+    const selection = editor.getSelection() as { isEmpty?: () => boolean; } | null;
+    const model = editor.getModel() as { getValueInRange: (range: unknown) => string; getWordAtPosition: (pos: unknown) => { word: string } | null } | null;
+    if (!model) {
+      return '';
+    }
+    if (selection && typeof selection.isEmpty === 'function' && !selection.isEmpty()) {
+      return model.getValueInRange(selection);
+    }
+    const position = editor.getPosition();
+    const word = model.getWordAtPosition(position);
+    return word?.word || '';
+  };
+
+  const registerEditorMappingActions = (
+    editor: { addAction: (action: { id: string; label: string; contextMenuGroupId?: string; contextMenuOrder?: number; run: () => void; }) => void },
+    placement: 'body',
+  ) => {
+    editor.addAction({
+      id: `apik-map-selection-${placement}`,
+      label: 'Map selection',
+      contextMenuGroupId: 'navigation',
+      contextMenuOrder: 1.3,
+      run: () => {
+        const value = getEditorSelectionText(editor as unknown as { getSelection: () => unknown; getModel: () => unknown; getPosition: () => unknown; });
+        if (value) {
+          openMappingModal(value, { placement });
+        } else {
+          toast('Select text to map');
+        }
+      },
+    });
+    editor.addAction({
+      id: `apik-auto-flow-${placement}`,
+      label: 'Auto flow from selection',
+      contextMenuGroupId: 'navigation',
+      contextMenuOrder: 1.4,
+      run: () => {
+        const value = getEditorSelectionText(editor as unknown as { getSelection: () => unknown; getModel: () => unknown; getPosition: () => unknown; });
+        if (value) {
+          void handleAutoFlow(value);
+        } else {
+          toast('Select text to map');
+        }
+      },
+    });
+  };
+
   const responseBodyToRender = beautifiedResponseBody ?? selected?.responseBody ?? '';
+  const parsedRequestHeaders = parseEditedHeaders();
+  const requestJsonKeys = listJsonKeys(editedBody || '');
+  const responseJsonKeys = listJsonKeys(selected?.responseBody || '');
 
   const handleForward = (id: string) => {
     if (selectedId === id) {
@@ -515,6 +1004,7 @@ export default function InterceptPanel() {
   };
 
   return (
+    <>
     <div className="flex h-full min-h-0 flex-col bg-app-bg">
       <div className="flex items-center justify-between px-4 py-3 border-b border-app-border bg-app-sidebar flex-shrink-0">
         <div className="flex items-center gap-2">
@@ -1021,7 +1511,22 @@ export default function InterceptPanel() {
                         <span className={`text-[11px] font-mono font-bold px-1.5 py-0.5 rounded ${METHOD_BG_COLORS[selected.method as HttpMethod] || 'bg-app-active text-app-muted'}`}>
                           {selected.method}
                         </span>
-                        <p className="text-sm font-mono text-app-text truncate">{selected.url}</p>
+                        <p
+                          className="text-sm font-mono text-app-text truncate"
+                          onContextMenu={(event) => {
+                            event.preventDefault();
+                            const params = getUrlParams(selected.url);
+                            if (params.length === 0) {
+                              toast('No query params to map');
+                              return;
+                            }
+                            const [paramKey, paramValue] = params[0];
+                            openMappingModal(paramValue, { placement: 'param', key: paramKey });
+                          }}
+                          title="Right click to map query param"
+                        >
+                          {selected.url}
+                        </p>
                       </div>
                       <p className="text-xs text-app-muted">
                         {new Date(selected.timestamp).toLocaleString()}
@@ -1122,6 +1627,7 @@ export default function InterceptPanel() {
                               )}
                               value={responseBodyToRender}
                               theme="vs-dark"
+                              onMount={(editor) => registerEditorMappingActions(editor, 'body')}
                               options={{
                                 readOnly: true,
                                 minimap: { enabled: false },
@@ -1148,8 +1654,61 @@ export default function InterceptPanel() {
                           <div className="px-3 py-2 border-b border-app-border bg-app-sidebar text-xs text-app-muted uppercase tracking-wider">
                             Request Headers
                           </div>
+                          <div className="px-3 py-2 border-b border-app-border bg-app-panel text-xs text-app-muted flex items-center gap-2">
+                            <span className="text-[11px] uppercase tracking-wider">Query Params</span>
+                            <button
+                              onClick={() => {
+                                try {
+                                  const url = new URL(selected.url);
+                                  const entries = Array.from(url.searchParams.entries());
+                                  if (entries.length === 0) {
+                                    toast('No query params');
+                                    return;
+                                  }
+                                  const [paramKey, paramValue] = entries[0];
+                                  openMappingModal(paramValue, { placement: 'param', key: paramKey });
+                                } catch {
+                                  toast('Invalid URL');
+                                }
+                              }}
+                              className="text-[11px] px-2 py-0.5 rounded border border-app-border text-app-muted hover:text-app-text hover:bg-app-hover"
+                            >
+                              Map first param
+                            </button>
+                          </div>
+                          <div className="h-[140px] overflow-y-auto border-b border-app-border">
+                            {Object.keys(parsedRequestHeaders).length === 0 ? (
+                              <div className="p-3 text-sm text-app-muted">No request headers parsed.</div>
+                            ) : (
+                              Object.entries(parsedRequestHeaders).map(([key, value]) => (
+                                <div
+                                  key={key}
+                                  className="flex items-start gap-2 px-3 py-2 border-b border-app-border/60 text-xs"
+                                  onContextMenu={(event) => handleContextMap(event, value, 'header', key)}
+                                  title="Right click to map"
+                                >
+                                  <div className="flex-1 text-blue-300 font-mono break-all">{key}</div>
+                                  <div className="flex-[1.2] text-app-text font-mono break-all">{value}</div>
+                                  <button
+                                    onClick={() => openMappingModal(value)}
+                                    className="flex items-center gap-1 px-2 py-0.5 rounded border border-app-border text-app-muted hover:text-app-text hover:bg-app-hover"
+                                    title="Map this value"
+                                  >
+                                    <Link2 size={11} /> Map
+                                  </button>
+                                  <button
+                                    onClick={() => void handleAutoFlow(value, key)}
+                                    className="flex items-center gap-1 px-2 py-0.5 rounded border border-app-border text-app-muted hover:text-app-text hover:bg-app-hover"
+                                    title="Auto-generate flow"
+                                  >
+                                    <Zap size={11} /> Auto
+                                  </button>
+                                </div>
+                              ))
+                            )}
+                          </div>
                           <Editor
-                            height="calc(100% - 33px)"
+                            height="calc(100% - 173px)"
                             language="json"
                             value={editedHeaders}
                             onChange={(value) => setEditedHeaders(value || '')}
@@ -1168,8 +1727,65 @@ export default function InterceptPanel() {
                           />
                         </div>
                         <div className="overflow-hidden">
-                          <div className="px-3 py-2 border-b border-app-border bg-app-sidebar text-xs text-app-muted uppercase tracking-wider">
-                            Request Body
+                          <div className="px-3 py-2 border-b border-app-border bg-app-sidebar text-xs text-app-muted uppercase tracking-wider flex items-center justify-between">
+                            <span>Request Body</span>
+                            <div className="flex items-center gap-2 normal-case">
+                              {requestJsonKeys.length > 0 && (
+                                <select
+                                  value={requestJsonKey}
+                                  onChange={(event) => setRequestJsonKey(event.target.value)}
+                                  className="input-field text-xs px-2 py-1"
+                                >
+                                  <option value="">Select JSON key</option>
+                                  {requestJsonKeys.map((entry) => (
+                                    <option key={entry.key} value={entry.key}>{entry.key}</option>
+                                  ))}
+                                </select>
+                              )}
+                              {requestJsonKey && (
+                                <>
+                                  <button
+                                    onClick={() => {
+                                      const entry = requestJsonKeys.find((item) => item.key === requestJsonKey);
+                                      if (!entry) return;
+                                      openMappingModal(entry.value, { placement: 'body', key: requestJsonKey });
+                                    }}
+                                    className="flex items-center gap-1 px-2 py-1 text-xs rounded border border-app-border text-app-muted hover:text-app-text hover:bg-app-hover"
+                                  >
+                                    <Link2 size={11} /> Map key
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      const entry = requestJsonKeys.find((item) => item.key === requestJsonKey);
+                                      if (!entry) return;
+                                      void handleAutoFlow(entry.value, requestJsonKey, 'body');
+                                    }}
+                                    className="flex items-center gap-1 px-2 py-1 text-xs rounded border border-app-border text-app-muted hover:text-app-text hover:bg-app-hover"
+                                  >
+                                    <Zap size={11} /> Auto key
+                                  </button>
+                                </>
+                              )}
+                              <input
+                                value={requestValueInput}
+                                onChange={(event) => setRequestValueInput(event.target.value)}
+                                onContextMenu={(event) => handleContextMap(event, requestValueInput, 'body')}
+                                className="input-field text-xs px-2 py-1"
+                                placeholder="Value to map"
+                              />
+                              <button
+                                onClick={() => openMappingModal(requestValueInput)}
+                                className="flex items-center gap-1 px-2 py-1 text-xs rounded border border-app-border text-app-muted hover:text-app-text hover:bg-app-hover"
+                              >
+                                <Link2 size={11} /> Map
+                              </button>
+                              <button
+                                onClick={() => void handleAutoFlow(requestValueInput)}
+                                className="flex items-center gap-1 px-2 py-1 text-xs rounded border border-app-border text-app-muted hover:text-app-text hover:bg-app-hover"
+                              >
+                                <Zap size={11} /> Auto
+                              </button>
+                            </div>
                           </div>
                           <Editor
                             height="calc(100% - 33px)"
@@ -1180,6 +1796,7 @@ export default function InterceptPanel() {
                             value={editedBody || ''}
                             onChange={(value) => setEditedBody(value || '')}
                             theme="vs-dark"
+                            onMount={(editor) => registerEditorMappingActions(editor, 'body')}
                             options={{
                               minimap: { enabled: false },
                               fontSize: 13,
@@ -1199,27 +1816,51 @@ export default function InterceptPanel() {
                     {detailTab === 'response' && (
                       <div className="h-full grid grid-cols-1 xl:grid-cols-2 gap-0">
                         <div className="border-r border-app-border overflow-hidden">
-                          <div className="px-3 py-2 border-b border-app-border bg-app-sidebar text-xs text-app-muted uppercase tracking-wider">
-                            Response Headers
+                          <div className="px-3 py-2 border-b border-app-border bg-app-sidebar text-xs text-app-muted uppercase tracking-wider flex items-center justify-between">
+                            <span>Response Headers</span>
+                            <button
+                              onClick={() => {
+                                if (!selected.responseHeaders) return;
+                                const json = JSON.stringify(selected.responseHeaders, null, 2);
+                                void copyText(json);
+                                toast.success('Response headers copied');
+                              }}
+                              className="flex items-center gap-1 px-2 py-1 text-[11px] rounded border border-app-border text-app-muted hover:text-app-text hover:bg-app-hover"
+                            >
+                              <Copy size={11} /> Copy
+                            </button>
                           </div>
-                          <Editor
-                            height="calc(100% - 33px)"
-                            language="json"
-                            value={JSON.stringify(selected.responseHeaders || {}, null, 2)}
-                            theme="vs-dark"
-                            options={{
-                              readOnly: true,
-                              minimap: { enabled: false },
-                              fontSize: 13,
-                              fontFamily: 'JetBrains Mono, Fira Code, Consolas, monospace',
-                              lineNumbers: 'on',
-                              wordWrap: 'on',
-                              scrollBeyondLastLine: false,
-                              padding: { top: 8 },
-                              automaticLayout: true,
-                              tabSize: 2,
-                            }}
-                          />
+                          <div className="h-full overflow-y-auto">
+                            {Object.entries(selected.responseHeaders || {}).length === 0 ? (
+                              <div className="p-4 text-app-muted text-sm">No response headers captured yet.</div>
+                            ) : (
+                              Object.entries(selected.responseHeaders || {}).map(([key, value]) => (
+                                <div
+                                  key={key}
+                                  className="flex items-start gap-2 px-3 py-2 border-b border-app-border/60 text-xs"
+                                  onContextMenu={(event) => handleContextMap(event, String(value), 'header', key)}
+                                  title="Right click to map"
+                                >
+                                  <div className="flex-1 text-blue-300 font-mono break-all">{key}</div>
+                                  <div className="flex-[1.2] text-app-text font-mono break-all">{String(value)}</div>
+                                  <button
+                                    onClick={() => openMappingModal(String(value))}
+                                    className="flex items-center gap-1 px-2 py-0.5 rounded border border-app-border text-app-muted hover:text-app-text hover:bg-app-hover"
+                                    title="Map this value"
+                                  >
+                                    <Link2 size={11} /> Map
+                                  </button>
+                                  <button
+                                    onClick={() => void handleAutoFlow(String(value), key)}
+                                    className="flex items-center gap-1 px-2 py-0.5 rounded border border-app-border text-app-muted hover:text-app-text hover:bg-app-hover"
+                                    title="Auto-generate flow"
+                                  >
+                                    <Zap size={11} /> Auto
+                                  </button>
+                                </div>
+                              ))
+                            )}
+                          </div>
                         </div>
                         <div className="overflow-hidden">
                           <div className="px-3 py-2 border-b border-app-border bg-app-sidebar text-xs text-app-muted uppercase tracking-wider flex items-center justify-between">
@@ -1228,6 +1869,61 @@ export default function InterceptPanel() {
                               {typeof selected.responseStatusCode === 'number' ? (
                                 <span className="text-app-text">HTTP {selected.responseStatusCode}</span>
                               ) : null}
+                              {responseJsonKeys.length > 0 && (
+                                <select
+                                  value={responseJsonKey}
+                                  onChange={(event) => setResponseJsonKey(event.target.value)}
+                                  className="input-field text-xs px-2 py-1"
+                                >
+                                  <option value="">Select JSON key</option>
+                                  {responseJsonKeys.map((entry) => (
+                                    <option key={entry.key} value={entry.key}>{entry.key}</option>
+                                  ))}
+                                </select>
+                              )}
+                              {responseJsonKey && (
+                                <>
+                                  <button
+                                    onClick={() => {
+                                      const entry = responseJsonKeys.find((item) => item.key === responseJsonKey);
+                                      if (!entry) return;
+                                      openMappingModal(entry.value, { placement: 'body', key: responseJsonKey });
+                                    }}
+                                    className="flex items-center gap-1 px-2 py-1 text-xs rounded border border-app-border text-app-muted hover:text-app-text hover:bg-app-hover"
+                                  >
+                                    <Link2 size={11} /> Map key
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      const entry = responseJsonKeys.find((item) => item.key === responseJsonKey);
+                                      if (!entry) return;
+                                      void handleAutoFlow(entry.value, responseJsonKey, 'body');
+                                    }}
+                                    className="flex items-center gap-1 px-2 py-1 text-xs rounded border border-app-border text-app-muted hover:text-app-text hover:bg-app-hover"
+                                  >
+                                    <Zap size={11} /> Auto key
+                                  </button>
+                                </>
+                              )}
+                              <input
+                                value={responseValueInput}
+                                onChange={(event) => setResponseValueInput(event.target.value)}
+                                onContextMenu={(event) => handleContextMap(event, responseValueInput, 'body')}
+                                className="input-field text-xs px-2 py-1"
+                                placeholder="Value to map"
+                              />
+                              <button
+                                onClick={() => openMappingModal(responseValueInput)}
+                                className="flex items-center gap-1 px-2 py-1 text-xs rounded border border-app-border text-app-muted hover:text-app-text hover:bg-app-hover"
+                              >
+                                <Link2 size={11} /> Map
+                              </button>
+                              <button
+                                onClick={() => void handleAutoFlow(responseValueInput)}
+                                className="flex items-center gap-1 px-2 py-1 text-xs rounded border border-app-border text-app-muted hover:text-app-text hover:bg-app-hover"
+                              >
+                                <Zap size={11} /> Auto
+                              </button>
                               <button
                                 onClick={handleBeautifyResponseBody}
                                 disabled={!selected.responseBody}
@@ -1255,6 +1951,7 @@ export default function InterceptPanel() {
                               )}
                               value={responseBodyToRender}
                               theme="vs-dark"
+                              onMount={(editor) => registerEditorMappingActions(editor, 'body')}
                               options={{
                                 readOnly: true,
                                 minimap: { enabled: false },
@@ -1317,5 +2014,149 @@ export default function InterceptPanel() {
         </PanelGroup>
       )}
     </div>
+    {mappingOpen && (
+      <div className="fixed inset-0 z-[80] bg-black/60 flex items-center justify-center p-4">
+        <div className="w-full max-w-3xl bg-app-panel border border-app-border rounded-lg shadow-2xl overflow-hidden">
+          <div className="px-4 py-3 border-b border-app-border bg-app-sidebar flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-app-text">Request Flow Mapper</h3>
+            <button
+              onClick={() => setMappingOpen(false)}
+              className="p-1 rounded hover:bg-app-hover text-app-muted hover:text-app-text"
+            >
+              <XIcon size={14} />
+            </button>
+          </div>
+          <div className="p-4 space-y-4">
+            <div className="space-y-2">
+              <label className="text-xs text-app-muted uppercase tracking-wider">Value to map</label>
+              <div className="flex items-center gap-2">
+                <input
+                  value={mappingValue}
+                  onChange={(event) => setMappingValue(event.target.value)}
+                  className="input-field flex-1"
+                  placeholder="Paste value from intercept"
+                />
+                <button
+                  onClick={() => {
+                    const matches = findMatchesForValue(mappingValue, selected?.id);
+                    setMappingMatches(matches);
+                    const defaultMatch = matches[0] || null;
+                    setSelectedMatchId(defaultMatch ? defaultMatch.id : null);
+                  }}
+                  className="px-3 py-1.5 text-sm rounded border border-app-border text-app-muted hover:text-app-text hover:bg-app-hover"
+                >
+                  Find source
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-[1.2fr_0.8fr] gap-4">
+              <div className="space-y-2">
+                <div className="text-xs text-app-muted uppercase tracking-wider">Source matches</div>
+                <div className="border border-app-border rounded bg-app-bg max-h-48 overflow-y-auto">
+                  {mappingMatches.length === 0 ? (
+                    <div className="p-3 text-sm text-app-muted">No matches found yet.</div>
+                  ) : (
+                    mappingMatches.map((match) => (
+                      <label
+                        key={match.id}
+                        className="flex items-start gap-2 px-3 py-2 border-b border-app-border/50 text-xs text-app-muted cursor-pointer"
+                      >
+                        <input
+                          type="radio"
+                          checked={selectedMatchId === match.id}
+                          onChange={() => {
+                            setSelectedMatchId(match.id);
+                            if (match.key && !targetKey) {
+                              setTargetKey(match.key);
+                            }
+                          }}
+                          className="mt-1 accent-orange-500"
+                        />
+                        <div>
+                          <div className="text-app-text font-medium">
+                            {match.request.method} {safeHostname(match.request.url)}
+                          </div>
+                          <div>{match.preview}</div>
+                        </div>
+                      </label>
+                    ))
+                  )}
+                </div>
+              </div>
+              <div className="space-y-3">
+                <div className="space-y-2">
+                  <label className="text-xs text-app-muted uppercase tracking-wider">Target Collection</label>
+                  <select
+                    value={targetCollectionId || ''}
+                    onChange={(event) => setTargetCollectionId(event.target.value || null)}
+                    className="input-field"
+                  >
+                    <option value="">Select collection...</option>
+                    {collections.map((collection) => (
+                      <option key={collection.id} value={collection.id}>{collection.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs text-app-muted uppercase tracking-wider">Target placement</label>
+                  <div className="flex items-center gap-2">
+                    {(['header', 'param', 'body'] as const).map((type) => (
+                      <button
+                        key={type}
+                        onClick={() => setTargetPlacement(type)}
+                        className={`px-2.5 py-1 rounded text-xs border ${
+                          targetPlacement === type
+                            ? 'border-app-accent bg-app-active text-app-text'
+                            : 'border-app-border text-app-muted hover:text-app-text hover:bg-app-hover'
+                        }`}
+                      >
+                        {type}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {targetPlacement !== 'body' && (
+                  <div className="space-y-2">
+                    <label className="text-xs text-app-muted uppercase tracking-wider">Target key</label>
+                    <input
+                      value={targetKey}
+                      onChange={(event) => setTargetKey(event.target.value)}
+                      className="input-field"
+                      placeholder="e.g. x-unique-id"
+                    />
+                  </div>
+                )}
+                <div className="space-y-2">
+                  <label className="text-xs text-app-muted uppercase tracking-wider">Environment key</label>
+                  <input
+                    value={envKey}
+                    onChange={(event) => setEnvKey(event.target.value)}
+                    className="input-field"
+                    placeholder="e.g. x_unique_id"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+          <div className="px-4 py-3 border-t border-app-border bg-app-sidebar flex items-center justify-end gap-2">
+            <button
+              onClick={() => setMappingOpen(false)}
+              className="px-3 py-1.5 text-sm rounded border border-app-border text-app-muted hover:text-app-text hover:bg-app-hover"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleAddFlowToCollection}
+              disabled={!targetCollectionId || !selectedMatchId || !mappingValue.trim()}
+              className="px-3 py-1.5 text-sm rounded bg-app-accent text-white hover:bg-app-accent-hover disabled:opacity-60"
+            >
+              Add flow to collection
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   );
 }

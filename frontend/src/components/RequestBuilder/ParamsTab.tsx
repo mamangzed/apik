@@ -2,6 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { useAppStore } from '../../store';
 import { KeyValuePair } from '../../types';
 import { Plus, Trash2, GripVertical } from 'lucide-react';
+import toast from 'react-hot-toast';
 
 interface KVTableProps {
   rows: KeyValuePair[];
@@ -9,9 +10,19 @@ interface KVTableProps {
   keyPlaceholder?: string;
   valuePlaceholder?: string;
   filter?: string;
+  onCopyAll?: () => void;
+  copyLabel?: string;
 }
 
-export function KVTable({ rows, onChange, keyPlaceholder = 'Key', valuePlaceholder = 'Value', filter }: KVTableProps) {
+export function KVTable({
+  rows,
+  onChange,
+  keyPlaceholder = 'Key',
+  valuePlaceholder = 'Value',
+  filter,
+  onCopyAll,
+  copyLabel = 'Copy',
+}: KVTableProps) {
   const addRow = () => {
     onChange([...rows, { id: uuidv4(), key: '', value: '', description: '', enabled: true }]);
   };
@@ -43,7 +54,16 @@ export function KVTable({ rows, onChange, keyPlaceholder = 'Key', valuePlacehold
         <div className="flex-1">Key</div>
         <div className="flex-1">Value</div>
         <div className="flex-1 hidden lg:block">Description</div>
-        <div className="w-8" />
+        <div className="w-16 flex justify-end">
+          {onCopyAll && (
+            <button
+              onClick={onCopyAll}
+              className="text-[11px] px-2 py-0.5 rounded border border-app-border text-app-muted hover:text-app-text hover:bg-app-hover"
+            >
+              {copyLabel}
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Rows */}
@@ -107,6 +127,20 @@ export default function ParamsTab({ filter }: { filter?: string }) {
   const tab = tabs.find((t) => t.id === activeTabId);
   if (!tab) return null;
 
+  const copyAll = async () => {
+    const enabled = tab.requestState.request.params.filter((item) => item.enabled && item.key);
+    const params = enabled.reduce<Record<string, string>>((acc, item) => {
+      acc[item.key] = item.value;
+      return acc;
+    }, {});
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(params, null, 2));
+      toast.success('Params copied');
+    } catch {
+      toast.error('Failed to copy params');
+    }
+  };
+
   return (
     <div className="h-full overflow-hidden">
       <KVTable
@@ -115,6 +149,8 @@ export default function ParamsTab({ filter }: { filter?: string }) {
         keyPlaceholder="Parameter"
         valuePlaceholder="Value"
         filter={filter}
+        onCopyAll={copyAll}
+        copyLabel="Copy"
       />
     </div>
   );
