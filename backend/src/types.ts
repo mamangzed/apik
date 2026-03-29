@@ -104,6 +104,16 @@ export interface RequestFormScripts {
   afterResponse?: string;
 }
 
+export interface RequestFormUiConfig {
+  title?: string;
+  subtitle?: string;
+  submitLabel?: string;
+  showReset?: boolean;
+  resetLabel?: string;
+  customStyle?: string;
+  customScript?: string;
+}
+
 export interface RequestFormTemplate {
   id: string;
   name: string;
@@ -118,6 +128,7 @@ export interface RequestFormConfig {
   responseMappings?: RequestFormResponseMapping[];
   scripts?: RequestFormScripts;
   templates?: RequestFormTemplate[];
+  ui?: RequestFormUiConfig;
 }
 
 export interface RetryPolicy {

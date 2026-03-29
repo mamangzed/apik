@@ -646,5 +646,13 @@ export async function getPublicFormByToken(token: string): Promise<PublicCollect
     .maybeSingle();
 
   if (error) throw error;
-  return data ? toPublicCollection(mapCollectionRow(data as CollectionRow)) : null;
+  if (!data) {
+    return null;
+  }
+
+  const collection = mapCollectionRow(data as CollectionRow);
+  return toPublicCollection({
+    ...collection,
+    requests: (collection.requests || []).filter((request) => Boolean(request.formConfig?.enabled)),
+  });
 }

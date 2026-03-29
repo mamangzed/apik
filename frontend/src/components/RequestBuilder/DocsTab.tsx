@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ArrowDown, ArrowUp, Download, Plus, RotateCcw, Sparkles, Trash2, Upload } from 'lucide-react';
+import { ArrowDown, ArrowUp, Download, Plus, RotateCcw, Share2, Sparkles, Trash2, Upload } from 'lucide-react';
 import { useAppStore } from '../../store';
 import { createAutoFormConfigFromRequest } from '../../lib/requestForm';
 import { RequestFormConfig, RequestFormField, RequestFormFieldTarget, RequestFormFieldType, RequestFormTemplate } from '../../types';
@@ -142,6 +142,36 @@ function normalizeImportedFormConfig(raw: unknown): RequestFormConfig | null {
           : '',
     },
     templates,
+    ui: {
+      title:
+        typeof (input.ui as Record<string, unknown> | undefined)?.title === 'string'
+          ? String((input.ui as Record<string, unknown>).title)
+          : '',
+      subtitle:
+        typeof (input.ui as Record<string, unknown> | undefined)?.subtitle === 'string'
+          ? String((input.ui as Record<string, unknown>).subtitle)
+          : '',
+      submitLabel:
+        typeof (input.ui as Record<string, unknown> | undefined)?.submitLabel === 'string'
+          ? String((input.ui as Record<string, unknown>).submitLabel)
+          : 'Submit Form',
+      showReset:
+        typeof (input.ui as Record<string, unknown> | undefined)?.showReset === 'boolean'
+          ? Boolean((input.ui as Record<string, unknown>).showReset)
+          : true,
+      resetLabel:
+        typeof (input.ui as Record<string, unknown> | undefined)?.resetLabel === 'string'
+          ? String((input.ui as Record<string, unknown>).resetLabel)
+          : 'Reset',
+      customStyle:
+        typeof (input.ui as Record<string, unknown> | undefined)?.customStyle === 'string'
+          ? String((input.ui as Record<string, unknown>).customStyle)
+          : '',
+      customScript:
+        typeof (input.ui as Record<string, unknown> | undefined)?.customScript === 'string'
+          ? String((input.ui as Record<string, unknown>).customScript)
+          : '',
+    },
   };
 }
 
@@ -173,6 +203,15 @@ function createDefaultFormConfig(): RequestFormConfig {
       afterResponse: '',
     },
     templates: [],
+    ui: {
+      title: '',
+      subtitle: '',
+      submitLabel: 'Submit Form',
+      showReset: true,
+      resetLabel: 'Reset',
+      customStyle: '',
+      customScript: '',
+    },
   };
 }
 
@@ -250,10 +289,40 @@ const FIELD_TARGETS: RequestFormFieldTarget[] = [
   'auth-api-key-value',
 ];
 
+const PALETTE_FIELD_TYPES: RequestFormFieldType[] = [
+  'text',
+  'email',
+  'password',
+  'tel',
+  'number',
+  'textarea',
+  'select',
+  'checkbox',
+  'date',
+  'file',
+  'json',
+];
+
+function createPaletteField(type: RequestFormFieldType): RequestFormField {
+  const pretty = type.replace(/-/g, ' ');
+  const label = pretty.charAt(0).toUpperCase() + pretty.slice(1);
+  const slug = pretty.replace(/\s+/g, '_').toLowerCase();
+  return createTemplateField({
+    name: `${slug}_${Math.random().toString(36).slice(2, 6)}`,
+    label,
+    type,
+    target: 'body-json',
+    targetKey: slug,
+    group: 'General',
+  });
+}
+
 export default function DocsTab() {
-  const { tabs, activeTabId, updateActiveRequest, collections } = useAppStore();
+  const { tabs, activeTabId, updateActiveRequest, collections, openShareModal, storageMode } = useAppStore();
   const [draggedFieldId, setDraggedFieldId] = useState<string | null>(null);
   const [draggedGroup, setDraggedGroup] = useState<string | null>(null);
+  const [draggedPaletteType, setDraggedPaletteType] = useState<RequestFormFieldType | null>(null);
+  const [visualPreviewMode, setVisualPreviewMode] = useState<'desktop' | 'mobile'>('desktop');
   const [showSchemaImport, setShowSchemaImport] = useState(false);
   const [schemaInput, setSchemaInput] = useState('');
   const [schemaMessage, setSchemaMessage] = useState('');
@@ -410,6 +479,77 @@ export default function DocsTab() {
     const [moved] = reordered.splice(sourceIndex, 1);
     reordered.splice(targetIndex, 0, moved);
     updateFormConfig({ fields: reordered });
+  };
+
+  const insertFieldBefore = (targetId: string, field: RequestFormField) => {
+    const targetIndex = formConfig.fields.findIndex((entry) => entry.id === targetId);
+    if (targetIndex < 0) {
+      updateFormConfig({ fields: [...formConfig.fields, field] });
+      return;
+    }
+
+    const next = [...formConfig.fields];
+    next.splice(targetIndex, 0, field);
+    updateFormConfig({ fields: next });
+  };
+
+  const moveFieldToGroup = (fieldId: string, targetGroup: string, targetFieldId?: string) => {
+    const sourceIndex = formConfig.fields.findIndex((entry) => entry.id === fieldId);
+    if (sourceIndex < 0) {
+      return;
+    }
+
+    const safeGroup = targetGroup.trim() || 'General';
+    const working = [...formConfig.fields];
+    const [movedRaw] = working.splice(sourceIndex, 1);
+    const moved = { ...movedRaw, group: safeGroup };
+
+    if (targetFieldId) {
+      const targetIndex = working.findIndex((entry) => entry.id === targetFieldId);
+      if (targetIndex >= 0) {
+        working.splice(targetIndex, 0, moved);
+        updateFormConfig({ fields: working });
+        return;
+      }
+    }
+
+    const lastIndexInGroup = [...working]
+      .map((entry, index) => ({ entry, index }))
+      .filter((item) => ((item.entry.group || 'General').trim() || 'General') === safeGroup)
+      .map((item) => item.index)
+      .pop();
+
+    if (typeof lastIndexInGroup === 'number') {
+      working.splice(lastIndexInGroup + 1, 0, moved);
+    } else {
+      working.push(moved);
+    }
+
+    updateFormConfig({ fields: working });
+  };
+
+  const insertPaletteFieldToGroup = (type: RequestFormFieldType, targetGroup: string, targetFieldId?: string) => {
+    const created = { ...createPaletteField(type), group: targetGroup.trim() || 'General' };
+    if (targetFieldId) {
+      insertFieldBefore(targetFieldId, created);
+      return;
+    }
+
+    const safeGroup = (targetGroup || 'General').trim() || 'General';
+    const lastIndexInGroup = [...formConfig.fields]
+      .map((entry, index) => ({ entry, index }))
+      .filter((item) => ((item.entry.group || 'General').trim() || 'General') === safeGroup)
+      .map((item) => item.index)
+      .pop();
+
+    if (typeof lastIndexInGroup !== 'number') {
+      updateFormConfig({ fields: [...formConfig.fields, created] });
+      return;
+    }
+
+    const next = [...formConfig.fields];
+    next.splice(lastIndexInGroup + 1, 0, created);
+    updateFormConfig({ fields: next });
   };
 
   const groupOrder = Array.from(
@@ -725,6 +865,19 @@ Returns a JSON object with user data."
               >
                 <Sparkles size={12} /> Auto Generate
               </button>
+              <button
+                onClick={() => {
+                  if (!collectionId || storageMode !== 'remote') {
+                    setSchemaMessage('Form sharing requires remote mode and a saved collection request.');
+                    return;
+                  }
+                  openShareModal(collectionId, 'form');
+                }}
+                className="btn-ghost text-xs inline-flex items-center gap-1.5"
+                title={storageMode === 'remote' ? 'Open dedicated share form link modal' : 'Switch to remote mode to share form'}
+              >
+                <Share2 size={12} /> Share Form
+              </button>
             </div>
           </div>
 
@@ -823,6 +976,130 @@ Returns a JSON object with user data."
                     </div>
                   )}
                   {schemaMessage && <p className="text-xs text-app-muted">{schemaMessage}</p>}
+                </div>
+
+                <div className="border border-app-border rounded p-3 space-y-3">
+                  <p className="text-xs uppercase tracking-wider text-app-muted">Visual Builder (Drag & Drop)</p>
+                  <p className="text-[11px] text-app-muted">Drag field type from palette into canvas to add input field. Drag cards in canvas to reorder.</p>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setVisualPreviewMode('desktop')}
+                      className={`btn-ghost text-xs ${visualPreviewMode === 'desktop' ? 'border-app-accent text-app-text' : ''}`}
+                    >
+                      Desktop Preview
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setVisualPreviewMode('mobile')}
+                      className={`btn-ghost text-xs ${visualPreviewMode === 'mobile' ? 'border-app-accent text-app-text' : ''}`}
+                    >
+                      Mobile Preview
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-[220px_1fr] gap-3">
+                    <div className="border border-app-border rounded p-2 space-y-2 bg-app-active/20">
+                      <p className="text-[11px] uppercase tracking-wider text-app-muted">Palette</p>
+                      <div className="grid grid-cols-2 gap-2">
+                        {PALETTE_FIELD_TYPES.map((type) => (
+                          <button
+                            key={type}
+                            draggable
+                            onDragStart={() => setDraggedPaletteType(type)}
+                            onDragEnd={() => setDraggedPaletteType(null)}
+                            className="px-2 py-1.5 rounded border border-app-border text-xs text-app-text bg-app-bg hover:bg-app-hover text-left"
+                            title="Drag into canvas"
+                          >
+                            {type}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div
+                      className="border border-dashed border-app-border rounded p-2 min-h-40 bg-app-bg/50"
+                      onDragOver={(event) => event.preventDefault()}
+                      onDrop={() => {
+                        if (draggedPaletteType) {
+                          updateFormConfig({ fields: [...formConfig.fields, createPaletteField(draggedPaletteType)] });
+                          setDraggedPaletteType(null);
+                          return;
+                        }
+                      }}
+                    >
+                      {formConfig.fields.length === 0 ? (
+                        <p className="text-xs text-app-muted">Drop field type here to start visual form layout.</p>
+                      ) : (
+                        <div className={`mx-auto ${visualPreviewMode === 'mobile' ? 'max-w-[420px]' : 'w-full'} space-y-3`}>
+                          {groupOrder.map((groupName) => {
+                            const groupFields = formConfig.fields.filter(
+                              (field) => ((field.group || 'General').trim() || 'General') === groupName,
+                            );
+
+                            return (
+                              <div
+                                key={`visual-group-${groupName}`}
+                                className="border border-app-border rounded p-2 bg-app-panel/40"
+                                onDragOver={(event) => event.preventDefault()}
+                                onDrop={() => {
+                                  if (draggedPaletteType) {
+                                    insertPaletteFieldToGroup(draggedPaletteType, groupName);
+                                    setDraggedPaletteType(null);
+                                    return;
+                                  }
+                                  if (draggedFieldId) {
+                                    moveFieldToGroup(draggedFieldId, groupName);
+                                    setDraggedFieldId(null);
+                                  }
+                                }}
+                              >
+                                <p className="text-[11px] uppercase tracking-wider text-app-muted mb-2">{groupName}</p>
+                                <div className={`grid grid-cols-1 ${visualPreviewMode === 'desktop' ? 'md:grid-cols-2' : ''} gap-2`}>
+                                  {groupFields.map((field) => (
+                                    <div
+                                      key={`visual-${field.id}`}
+                                      draggable
+                                      onDragStart={() => setDraggedFieldId(field.id)}
+                                      onDragOver={(event) => event.preventDefault()}
+                                      onDrop={() => {
+                                        if (draggedPaletteType) {
+                                          insertPaletteFieldToGroup(draggedPaletteType, groupName, field.id);
+                                          setDraggedPaletteType(null);
+                                          return;
+                                        }
+                                        if (draggedFieldId) {
+                                          moveFieldToGroup(draggedFieldId, groupName, field.id);
+                                          setDraggedFieldId(null);
+                                        }
+                                      }}
+                                      className={`border border-app-border rounded px-2 py-2 text-xs bg-app-bg ${field.layoutWidth === 'full' && visualPreviewMode === 'desktop' ? 'md:col-span-2' : ''}`}
+                                    >
+                                      <div className="flex items-center justify-between gap-2">
+                                        <span className="font-medium text-app-text truncate">{field.label}</span>
+                                        <span className="text-app-muted font-mono">{field.type}</span>
+                                      </div>
+                                      <div className="mt-1 flex items-center justify-between text-[11px] text-app-muted gap-2">
+                                        <span className="font-mono truncate">{field.target}{' -> '}{field.targetKey}</span>
+                                        <button
+                                          type="button"
+                                          onClick={() => updateField(field.id, { layoutWidth: field.layoutWidth === 'full' ? 'half' : 'full' })}
+                                          className="px-1.5 py-0.5 rounded border border-app-border hover:bg-app-hover"
+                                          title="Toggle half/full width"
+                                        >
+                                          {field.layoutWidth === 'full' ? 'full' : 'half'}
+                                        </button>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
 
                 {groupOrder.length > 0 && (
@@ -1456,6 +1733,126 @@ Returns a JSON object with user data."
                       }
                       className="input-field mt-1 font-mono text-xs min-h-20"
                       placeholder="if (context.response.status === 200) { return { message: 'ok' }; }"
+                    />
+                  </label>
+                </div>
+
+                <div className="border-t border-app-border pt-4 space-y-3">
+                  <p className="text-xs uppercase tracking-wider text-app-muted">Form UI & Styling</p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                    <label className="text-xs text-app-muted">
+                      Form Title
+                      <input
+                        value={formConfig.ui?.title || ''}
+                        onChange={(event) =>
+                          updateFormConfig({
+                            ui: {
+                              ...(formConfig.ui || {}),
+                              title: event.target.value,
+                            },
+                          })
+                        }
+                        className="input-field mt-1 text-xs"
+                        placeholder="Contact Form"
+                      />
+                    </label>
+                    <label className="text-xs text-app-muted">
+                      Submit Button Label
+                      <input
+                        value={formConfig.ui?.submitLabel || 'Submit Form'}
+                        onChange={(event) =>
+                          updateFormConfig({
+                            ui: {
+                              ...(formConfig.ui || {}),
+                              submitLabel: event.target.value,
+                            },
+                          })
+                        }
+                        className="input-field mt-1 text-xs"
+                        placeholder="Send"
+                      />
+                    </label>
+                    <label className="text-xs text-app-muted md:col-span-2">
+                      Form Subtitle
+                      <input
+                        value={formConfig.ui?.subtitle || ''}
+                        onChange={(event) =>
+                          updateFormConfig({
+                            ui: {
+                              ...(formConfig.ui || {}),
+                              subtitle: event.target.value,
+                            },
+                          })
+                        }
+                        className="input-field mt-1 text-xs"
+                        placeholder="Please fill all required fields"
+                      />
+                    </label>
+                    <label className="text-xs text-app-muted inline-flex items-center gap-2 mt-1">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(formConfig.ui?.showReset ?? true)}
+                        onChange={(event) =>
+                          updateFormConfig({
+                            ui: {
+                              ...(formConfig.ui || {}),
+                              showReset: event.target.checked,
+                            },
+                          })
+                        }
+                        className="w-3.5 h-3.5 accent-orange-500"
+                      />
+                      Show reset button
+                    </label>
+                    <label className="text-xs text-app-muted">
+                      Reset Button Label
+                      <input
+                        value={formConfig.ui?.resetLabel || 'Reset'}
+                        onChange={(event) =>
+                          updateFormConfig({
+                            ui: {
+                              ...(formConfig.ui || {}),
+                              resetLabel: event.target.value,
+                            },
+                          })
+                        }
+                        className="input-field mt-1 text-xs"
+                        placeholder="Clear"
+                      />
+                    </label>
+                  </div>
+
+                  <label className="text-xs text-app-muted block">
+                    Custom Style (CSS applied on public form for this request)
+                    <textarea
+                      value={formConfig.ui?.customStyle || ''}
+                      onChange={(event) =>
+                        updateFormConfig({
+                          ui: {
+                            ...(formConfig.ui || {}),
+                            customStyle: event.target.value,
+                          },
+                        })
+                      }
+                      className="input-field mt-1 font-mono text-xs min-h-20"
+                      placeholder=".form-title { color: #22c55e; }\n.form-submit { border-radius: 9999px; }"
+                    />
+                  </label>
+
+                  <label className="text-xs text-app-muted block">
+                    Custom Script (JS before submit, receives <code>context</code>)
+                    <textarea
+                      value={formConfig.ui?.customScript || ''}
+                      onChange={(event) =>
+                        updateFormConfig({
+                          ui: {
+                            ...(formConfig.ui || {}),
+                            customScript: event.target.value,
+                          },
+                        })
+                      }
+                      className="input-field mt-1 font-mono text-xs min-h-20"
+                      placeholder="if (!context.values.email?.includes('@')) { throw new Error('Email invalid'); }\nreturn context.values;"
                     />
                   </label>
                 </div>

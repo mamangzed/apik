@@ -341,14 +341,23 @@ export default function PublicCollectionPage({ shareMode = 'collection' }: { sha
       if (request.formConfig?.enabled) {
         const currentValues = formValuesByRequest[request.id] || getInitialFormValues(request);
         const mappedValues = applyResponseMappings(currentValues, request.formConfig, responses);
-        const scriptedValues = runFormScript<Record<string, string>>(
-          request.formConfig.scripts?.beforeSubmit,
+        const uiScriptValues = runFormScript<Record<string, string>>(
+          request.formConfig.ui?.customScript,
           {
             values: { ...mappedValues },
             request,
             responses,
           },
           mappedValues,
+        );
+        const scriptedValues = runFormScript<Record<string, string>>(
+          request.formConfig.scripts?.beforeSubmit,
+          {
+            values: { ...uiScriptValues },
+            request,
+            responses,
+          },
+          uiScriptValues,
         );
         const mergedValues = toStringRecord(scriptedValues, mappedValues);
         setFormValuesByRequest((previous) => ({
@@ -569,6 +578,11 @@ export default function PublicCollectionPage({ shareMode = 'collection' }: { sha
             const currentEditTab = activeEditTab[request.id] || 'params';
             return (
               <div key={request.id} className="panel overflow-hidden">
+                {effectiveRequest.formConfig?.ui?.customStyle && (
+                  <style>{`
+                    .public-form-${effectiveRequest.id} ${effectiveRequest.formConfig.ui.customStyle}
+                  `}</style>
+                )}
                 <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 px-4 sm:px-5 py-4 border-b border-app-border bg-app-sidebar">
                   <div className="flex items-center gap-3 min-w-0">
                     <span className={`text-xs font-mono font-bold px-2.5 py-1 rounded ${METHOD_BG_COLORS[effectiveRequest.method]}`}>
@@ -597,7 +611,11 @@ export default function PublicCollectionPage({ shareMode = 'collection' }: { sha
                         </button>
                       </>
                     )}
-                    <button onClick={() => sendRequest(effectiveRequest)} className="btn-primary text-xs py-1.5 min-w-24 justify-center inline-flex items-center gap-1.5">
+                    <button
+                      onClick={() => sendRequest(effectiveRequest)}
+                      className="btn-primary text-xs py-1.5 min-w-24 justify-center inline-flex items-center gap-1.5"
+                      style={{ display: shareMode === 'form' && effectiveRequest.formConfig?.enabled ? 'none' : undefined }}
+                    >
                       {activeRequestId === request.id ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />}
                       {activeRequestId === request.id ? 'Sending' : 'Try request'}
                     </button>
@@ -897,11 +915,13 @@ export default function PublicCollectionPage({ shareMode = 'collection' }: { sha
                   )}
 
                   {effectiveRequest.formConfig?.enabled && (
-                    <div className="border border-app-border rounded-lg p-3 space-y-3 bg-app-bg/30">
+                    <div className={`public-form-${effectiveRequest.id} border border-app-border rounded-lg p-3 space-y-3 bg-app-bg/30`}>
                       <div>
-                        <p className="text-xs uppercase tracking-wider text-app-muted">Interactive Form</p>
-                        <p className="text-xs text-app-muted mt-1">
-                          This request is configured with auto-generated/custom fields, response mapping, and optional auth dependency.
+                        <p className="form-title text-xs uppercase tracking-wider text-app-muted">
+                          {effectiveRequest.formConfig.ui?.title || 'Interactive Form'}
+                        </p>
+                        <p className="form-subtitle text-xs text-app-muted mt-1">
+                          {effectiveRequest.formConfig.ui?.subtitle || 'This request is configured with auto-generated/custom fields, response mapping, and optional auth dependency.'}
                         </p>
                       </div>
 
@@ -1116,6 +1136,31 @@ export default function PublicCollectionPage({ shareMode = 'collection' }: { sha
                           Requires auth from another request first.
                         </div>
                       )}
+
+                      <div className="flex flex-wrap gap-2 pt-1">
+                        <button
+                          onClick={() => sendRequest(effectiveRequest)}
+                          className="form-submit btn-primary text-xs py-1.5 min-w-28 justify-center inline-flex items-center gap-1.5"
+                        >
+                          {activeRequestId === request.id ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />}
+                          {activeRequestId === request.id
+                            ? 'Sending'
+                            : (effectiveRequest.formConfig.ui?.submitLabel || 'Submit Form')}
+                        </button>
+                        {effectiveRequest.formConfig.ui?.showReset !== false && (
+                          <button
+                            onClick={() =>
+                              setFormValuesByRequest((previous) => ({
+                                ...previous,
+                                [effectiveRequest.id]: getInitialFormValues(effectiveRequest),
+                              }))
+                            }
+                            className="form-reset btn-ghost text-xs py-1.5 min-w-24"
+                          >
+                            {effectiveRequest.formConfig.ui?.resetLabel || 'Reset'}
+                          </button>
+                        )}
+                      </div>
                     </div>
                   )}
 

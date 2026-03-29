@@ -227,6 +227,15 @@ export function createAutoFormConfigFromRequest(request: ApiRequest): RequestFor
       beforeSubmit: '',
       afterResponse: '',
     },
+    ui: {
+      title: '',
+      subtitle: '',
+      submitLabel: 'Submit Form',
+      showReset: true,
+      resetLabel: 'Reset',
+      customStyle: '',
+      customScript: '',
+    },
   };
 }
 
@@ -250,6 +259,7 @@ function cloneRequest(request: ApiRequest): ApiRequest {
           responseMappings: request.formConfig.responseMappings?.map((mapping) => ({ ...mapping })) || [],
           scripts: request.formConfig.scripts ? { ...request.formConfig.scripts } : undefined,
           authRequirement: request.formConfig.authRequirement ? { ...request.formConfig.authRequirement } : undefined,
+          ui: request.formConfig.ui ? { ...request.formConfig.ui } : undefined,
         }
       : undefined,
   };
