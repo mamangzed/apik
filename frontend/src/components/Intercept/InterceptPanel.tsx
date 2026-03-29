@@ -196,12 +196,16 @@ export default function InterceptPanel() {
   const [selectedMatchId, setSelectedMatchId] = useState<string | null>(null);
   const [mappingMode, setMappingMode] = useState<'pair' | 'global'>('pair');
   const [mappingModalMaximized, setMappingModalMaximized] = useState(false);
-  const [flowLayout, setFlowLayout] = useState<'horizontal' | 'vertical'>('horizontal');
   const [showHostInPreview, setShowHostInPreview] = useState(true);
   const [showOnlyMatchedRequests, setShowOnlyMatchedRequests] = useState(false);
+  const [hideLowConfidenceEdges, setHideLowConfidenceEdges] = useState(true);
+  const [hideStaticAssetsInFlow, setHideStaticAssetsInFlow] = useState(false);
+  const [hideDuplicatePollingInFlow, setHideDuplicatePollingInFlow] = useState(false);
+  const [showOnlyAuthFlow, setShowOnlyAuthFlow] = useState(false);
   const [compactFlowPreview, setCompactFlowPreview] = useState(false);
   const [compactPreferenceSet, setCompactPreferenceSet] = useState(false);
   const [expandedFlowNodeIds, setExpandedFlowNodeIds] = useState<string[]>([]);
+  const [expandedBodyPanelIds, setExpandedBodyPanelIds] = useState<string[]>([]);
   const [isNarrowScreen, setIsNarrowScreen] = useState(false);
   const [targetCollectionId, setTargetCollectionId] = useState<string | null>(null);
   const [targetPlacement, setTargetPlacement] = useState<'header' | 'param' | 'body'>('header');
@@ -231,14 +235,15 @@ export default function InterceptPanel() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  const flowLayoutBaseKey = 'apik.flow.preview.layout';
   const flowCompactBaseKey = 'apik.flow.preview.compact';
-
-  const flowLayoutStorageKey = useMemo(() => {
-    const base = flowLayoutBaseKey;
-    if (!userId || !targetCollectionId) return base;
-    return `${base}.${userId}.${targetCollectionId}`;
-  }, [targetCollectionId, userId]);
+  const flowShowHostBaseKey = 'apik.flow.preview.showHost';
+  const flowOnlyMatchedBaseKey = 'apik.flow.preview.onlyMatched';
+  const flowHideLowConfidenceBaseKey = 'apik.flow.preview.hideLowConfidence';
+  const flowHideStaticBaseKey = 'apik.flow.preview.hideStatic';
+  const flowHideDuplicateBaseKey = 'apik.flow.preview.hideDuplicate';
+  const flowOnlyAuthBaseKey = 'apik.flow.preview.onlyAuth';
+  const flowExpandedNodesBaseKey = 'apik.flow.preview.expandedNodes';
+  const flowExpandedBodiesBaseKey = 'apik.flow.preview.expandedBodies';
 
   const flowCompactStorageKey = useMemo(() => {
     const base = flowCompactBaseKey;
@@ -246,21 +251,53 @@ export default function InterceptPanel() {
     return `${base}.${userId}.${targetCollectionId}`;
   }, [targetCollectionId, userId]);
 
-  useEffect(() => {
-    try {
-      const scoped = localStorage.getItem(flowLayoutStorageKey);
-      if (scoped === 'horizontal' || scoped === 'vertical') {
-        setFlowLayout(scoped);
-        return;
-      }
-      const fallback = localStorage.getItem(flowLayoutBaseKey);
-      if (fallback === 'horizontal' || fallback === 'vertical') {
-        setFlowLayout(fallback);
-      }
-    } catch {
-      // Ignore storage issues.
-    }
-  }, [flowLayoutStorageKey]);
+  const flowShowHostStorageKey = useMemo(() => {
+    const base = flowShowHostBaseKey;
+    if (!userId || !targetCollectionId) return base;
+    return `${base}.${userId}.${targetCollectionId}`;
+  }, [targetCollectionId, userId]);
+
+  const flowOnlyMatchedStorageKey = useMemo(() => {
+    const base = flowOnlyMatchedBaseKey;
+    if (!userId || !targetCollectionId) return base;
+    return `${base}.${userId}.${targetCollectionId}`;
+  }, [targetCollectionId, userId]);
+
+  const flowHideStaticStorageKey = useMemo(() => {
+    const base = flowHideStaticBaseKey;
+    if (!userId || !targetCollectionId) return base;
+    return `${base}.${userId}.${targetCollectionId}`;
+  }, [targetCollectionId, userId]);
+
+  const flowHideLowConfidenceStorageKey = useMemo(() => {
+    const base = flowHideLowConfidenceBaseKey;
+    if (!userId || !targetCollectionId) return base;
+    return `${base}.${userId}.${targetCollectionId}`;
+  }, [targetCollectionId, userId]);
+
+  const flowHideDuplicateStorageKey = useMemo(() => {
+    const base = flowHideDuplicateBaseKey;
+    if (!userId || !targetCollectionId) return base;
+    return `${base}.${userId}.${targetCollectionId}`;
+  }, [targetCollectionId, userId]);
+
+  const flowOnlyAuthStorageKey = useMemo(() => {
+    const base = flowOnlyAuthBaseKey;
+    if (!userId || !targetCollectionId) return base;
+    return `${base}.${userId}.${targetCollectionId}`;
+  }, [targetCollectionId, userId]);
+
+  const flowExpandedNodesStorageKey = useMemo(() => {
+    const base = flowExpandedNodesBaseKey;
+    if (!userId || !targetCollectionId) return base;
+    return `${base}.${userId}.${targetCollectionId}`;
+  }, [targetCollectionId, userId]);
+
+  const flowExpandedBodiesStorageKey = useMemo(() => {
+    const base = flowExpandedBodiesBaseKey;
+    if (!userId || !targetCollectionId) return base;
+    return `${base}.${userId}.${targetCollectionId}`;
+  }, [targetCollectionId, userId]);
 
   useEffect(() => {
     try {
@@ -282,11 +319,143 @@ export default function InterceptPanel() {
 
   useEffect(() => {
     try {
-      localStorage.setItem(flowLayoutStorageKey, flowLayout);
+      const scoped = localStorage.getItem(flowShowHostStorageKey);
+      if (scoped === 'true' || scoped === 'false') {
+        setShowHostInPreview(scoped === 'true');
+        return;
+      }
+      const fallback = localStorage.getItem(flowShowHostBaseKey);
+      if (fallback === 'true' || fallback === 'false') {
+        setShowHostInPreview(fallback === 'true');
+      }
     } catch {
       // Ignore storage issues.
     }
-  }, [flowLayout, flowLayoutStorageKey]);
+  }, [flowShowHostStorageKey]);
+
+  useEffect(() => {
+    try {
+      const scoped = localStorage.getItem(flowOnlyMatchedStorageKey);
+      if (scoped === 'true' || scoped === 'false') {
+        setShowOnlyMatchedRequests(scoped === 'true');
+        return;
+      }
+      const fallback = localStorage.getItem(flowOnlyMatchedBaseKey);
+      if (fallback === 'true' || fallback === 'false') {
+        setShowOnlyMatchedRequests(fallback === 'true');
+      }
+    } catch {
+      // Ignore storage issues.
+    }
+  }, [flowOnlyMatchedStorageKey]);
+
+  useEffect(() => {
+    try {
+      const scoped = localStorage.getItem(flowHideLowConfidenceStorageKey);
+      if (scoped === 'true' || scoped === 'false') {
+        setHideLowConfidenceEdges(scoped === 'true');
+        return;
+      }
+      const fallback = localStorage.getItem(flowHideLowConfidenceBaseKey);
+      if (fallback === 'true' || fallback === 'false') {
+        setHideLowConfidenceEdges(fallback === 'true');
+      }
+    } catch {
+      // Ignore storage issues.
+    }
+  }, [flowHideLowConfidenceStorageKey]);
+
+  useEffect(() => {
+    try {
+      const scoped = localStorage.getItem(flowHideStaticStorageKey);
+      if (scoped === 'true' || scoped === 'false') {
+        setHideStaticAssetsInFlow(scoped === 'true');
+        return;
+      }
+      const fallback = localStorage.getItem(flowHideStaticBaseKey);
+      if (fallback === 'true' || fallback === 'false') {
+        setHideStaticAssetsInFlow(fallback === 'true');
+      }
+    } catch {
+      // Ignore storage issues.
+    }
+  }, [flowHideStaticStorageKey]);
+
+  useEffect(() => {
+    try {
+      const scoped = localStorage.getItem(flowHideDuplicateStorageKey);
+      if (scoped === 'true' || scoped === 'false') {
+        setHideDuplicatePollingInFlow(scoped === 'true');
+        return;
+      }
+      const fallback = localStorage.getItem(flowHideDuplicateBaseKey);
+      if (fallback === 'true' || fallback === 'false') {
+        setHideDuplicatePollingInFlow(fallback === 'true');
+      }
+    } catch {
+      // Ignore storage issues.
+    }
+  }, [flowHideDuplicateStorageKey]);
+
+  useEffect(() => {
+    try {
+      const scoped = localStorage.getItem(flowOnlyAuthStorageKey);
+      if (scoped === 'true' || scoped === 'false') {
+        setShowOnlyAuthFlow(scoped === 'true');
+        return;
+      }
+      const fallback = localStorage.getItem(flowOnlyAuthBaseKey);
+      if (fallback === 'true' || fallback === 'false') {
+        setShowOnlyAuthFlow(fallback === 'true');
+      }
+    } catch {
+      // Ignore storage issues.
+    }
+  }, [flowOnlyAuthStorageKey]);
+
+  useEffect(() => {
+    try {
+      const scoped = localStorage.getItem(flowExpandedNodesStorageKey);
+      if (scoped) {
+        const parsed = JSON.parse(scoped);
+        if (Array.isArray(parsed)) {
+          setExpandedFlowNodeIds(parsed.filter((item) => typeof item === 'string'));
+          return;
+        }
+      }
+      const fallback = localStorage.getItem(flowExpandedNodesBaseKey);
+      if (fallback) {
+        const parsed = JSON.parse(fallback);
+        if (Array.isArray(parsed)) {
+          setExpandedFlowNodeIds(parsed.filter((item) => typeof item === 'string'));
+        }
+      }
+    } catch {
+      // Ignore storage issues.
+    }
+  }, [flowExpandedNodesStorageKey]);
+
+  useEffect(() => {
+    try {
+      const scoped = localStorage.getItem(flowExpandedBodiesStorageKey);
+      if (scoped) {
+        const parsed = JSON.parse(scoped);
+        if (Array.isArray(parsed)) {
+          setExpandedBodyPanelIds(parsed.filter((item) => typeof item === 'string'));
+          return;
+        }
+      }
+      const fallback = localStorage.getItem(flowExpandedBodiesBaseKey);
+      if (fallback) {
+        const parsed = JSON.parse(fallback);
+        if (Array.isArray(parsed)) {
+          setExpandedBodyPanelIds(parsed.filter((item) => typeof item === 'string'));
+        }
+      }
+    } catch {
+      // Ignore storage issues.
+    }
+  }, [flowExpandedBodiesStorageKey]);
 
   useEffect(() => {
     try {
@@ -300,28 +469,74 @@ export default function InterceptPanel() {
   }, [compactFlowPreview, compactPreferenceSet, flowCompactStorageKey]);
 
   useEffect(() => {
+    try {
+      localStorage.setItem(flowShowHostStorageKey, showHostInPreview ? 'true' : 'false');
+    } catch {
+      // Ignore storage issues.
+    }
+  }, [flowShowHostStorageKey, showHostInPreview]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(flowOnlyMatchedStorageKey, showOnlyMatchedRequests ? 'true' : 'false');
+    } catch {
+      // Ignore storage issues.
+    }
+  }, [flowOnlyMatchedStorageKey, showOnlyMatchedRequests]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(flowHideLowConfidenceStorageKey, hideLowConfidenceEdges ? 'true' : 'false');
+    } catch {
+      // Ignore storage issues.
+    }
+  }, [flowHideLowConfidenceStorageKey, hideLowConfidenceEdges]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(flowHideStaticStorageKey, hideStaticAssetsInFlow ? 'true' : 'false');
+    } catch {
+      // Ignore storage issues.
+    }
+  }, [flowHideStaticStorageKey, hideStaticAssetsInFlow]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(flowHideDuplicateStorageKey, hideDuplicatePollingInFlow ? 'true' : 'false');
+    } catch {
+      // Ignore storage issues.
+    }
+  }, [flowHideDuplicateStorageKey, hideDuplicatePollingInFlow]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(flowOnlyAuthStorageKey, showOnlyAuthFlow ? 'true' : 'false');
+    } catch {
+      // Ignore storage issues.
+    }
+  }, [flowOnlyAuthStorageKey, showOnlyAuthFlow]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(flowExpandedNodesStorageKey, JSON.stringify(expandedFlowNodeIds));
+    } catch {
+      // Ignore storage issues.
+    }
+  }, [expandedFlowNodeIds, flowExpandedNodesStorageKey]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(flowExpandedBodiesStorageKey, JSON.stringify(expandedBodyPanelIds));
+    } catch {
+      // Ignore storage issues.
+    }
+  }, [expandedBodyPanelIds, flowExpandedBodiesStorageKey]);
+
+  useEffect(() => {
     if (!compactPreferenceSet) {
       setCompactFlowPreview(isNarrowScreen);
     }
   }, [compactPreferenceSet, isNarrowScreen]);
-
-  const resetFlowLayout = () => {
-    setFlowLayout('horizontal');
-    setCompactFlowPreview(false);
-    setCompactPreferenceSet(false);
-    try {
-      localStorage.removeItem(flowLayoutStorageKey);
-      localStorage.removeItem(flowCompactStorageKey);
-      if (flowLayoutStorageKey !== flowLayoutBaseKey) {
-        localStorage.removeItem(flowLayoutBaseKey);
-      }
-      if (flowCompactStorageKey !== flowCompactBaseKey) {
-        localStorage.removeItem(flowCompactBaseKey);
-      }
-    } catch {
-      // Ignore storage issues.
-    }
-  };
 
   const scopeId = useMemo(() => {
     try {
@@ -698,7 +913,6 @@ export default function InterceptPanel() {
     setEnvKey(normalizeEnvKey(defaultKey || value));
     setMappingMode('pair');
     setMappingModalMaximized(false);
-    setExpandedFlowNodeIds([]);
     setMappingOpen(true);
   };
 
@@ -945,7 +1159,7 @@ export default function InterceptPanel() {
 
         const envName = normalizeEnvKey(envKey || targetKey || mappingValue);
         const sourceScript = buildSourceScript(match, envName, mappingValue);
-        const pairChain = buildPairChainRequests(selectedMatchId);
+        const pairChain = applyConfidenceFilterToChain(buildPairChainRequests(selectedMatchId));
         if (pairChain.length === 0) {
           toast.error('No flow candidates found');
           return;
@@ -1216,9 +1430,85 @@ export default function InterceptPanel() {
     return value.length > limit ? `${value.slice(0, limit)}...` : value;
   };
 
+  const previewHeaderEntries = (headers?: Record<string, string>) => {
+    const entries = Object.entries(headers || {});
+    const maxVisible = 6;
+    return {
+      visible: entries.slice(0, maxVisible),
+      remaining: Math.max(0, entries.length - maxVisible),
+      total: entries.length,
+    };
+  };
+
+  const responseStatusTextClass = (status?: number) => {
+    if (!status) return 'text-app-muted';
+    if (status >= 200 && status < 300) return 'text-emerald-300';
+    if (status >= 300 && status < 400) return 'text-sky-300';
+    if (status >= 400 && status < 500) return 'text-amber-300';
+    if (status >= 500) return 'text-rose-300';
+    return 'text-app-text';
+  };
+
+  const buildCurlCommand = (request: InterceptedRequest) => {
+    const escape = (value: string) => value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+    const headerFlags = Object.entries(request.headers || {})
+      .map(([key, value]) => `-H "${escape(key)}: ${escape(String(value))}"`)
+      .join(' ');
+    const bodyFlag = request.body ? ` --data-raw "${escape(String(request.body))}"` : '';
+    const url = escape(String(request.url || ''));
+    return `curl -X ${request.method} "${url}" ${headerFlags}${bodyFlag}`.trim();
+  };
+
+  const extractMappedValueFromRequest = (request: InterceptedRequest) => {
+    const requestMatches = mappingMatches.filter((match) => match.request.id === request.id);
+    if (requestMatches.length > 0) {
+      const preview = requestMatches[0].preview || '';
+      const byAssignment = preview.split('=').pop()?.trim();
+      if (byAssignment) {
+        return byAssignment;
+      }
+      const byHeader = preview.split(':').slice(1).join(':').trim();
+      if (byHeader) {
+        return byHeader;
+      }
+    }
+    return mappingValue;
+  };
+
   const matchedRequestIds = useMemo(() => (
     new Set(mappingMatches.map((match) => match.request.id))
   ), [mappingMatches]);
+
+  const requestMatchProfile = useMemo(() => {
+    const map = new Map<string, {
+      hasReq: boolean;
+      hasRes: boolean;
+      requestMatches: MappingMatch[];
+      responseMatches: MappingMatch[];
+    }>();
+
+    mappingMatches.forEach((match) => {
+      const current = map.get(match.request.id) || {
+        hasReq: false,
+        hasRes: false,
+        requestMatches: [] as MappingMatch[],
+        responseMatches: [] as MappingMatch[],
+      };
+
+      if (match.source === 'request-header' || match.source === 'request-body') {
+        current.hasReq = true;
+        current.requestMatches.push(match);
+      }
+      if (match.source === 'response-header' || match.source === 'response-body') {
+        current.hasRes = true;
+        current.responseMatches.push(match);
+      }
+
+      map.set(match.request.id, current);
+    });
+
+    return map;
+  }, [mappingMatches]);
 
   const highlightedRequestId = useMemo(() => {
     if (selectedMatchId) {
@@ -1226,6 +1516,177 @@ export default function InterceptPanel() {
     }
     return mappingMatches[0]?.request.id || null;
   }, [mappingMatches, selectedMatchId]);
+
+  const selectedSourceMatch = useMemo(() => {
+    if (!selectedMatchId) {
+      return mappingMatches[0] || null;
+    }
+    return mappingMatches.find((match) => match.id === selectedMatchId) || null;
+  }, [mappingMatches, selectedMatchId]);
+
+  const isStaticAssetRequest = (request: InterceptedRequest) => {
+    const url = String(request.url || '').toLowerCase();
+    return /(\.css|\.js|\.mjs|\.png|\.jpg|\.jpeg|\.gif|\.svg|\.ico|\.webp|\.woff2?|\.ttf|\.map)(\?|$)/.test(url);
+  };
+
+  const isAuthRelatedRequest = (request: InterceptedRequest) => {
+    const haystack = [
+      request.url,
+      JSON.stringify(request.headers || {}),
+      String(request.body || ''),
+      JSON.stringify(request.responseHeaders || {}),
+      String(request.responseBody || ''),
+    ].join(' ').toLowerCase();
+    return /(auth|login|token|bearer|refresh|oauth|jwt|session|profile|identity)/.test(haystack);
+  };
+
+  const describeMatchRef = (match: MappingMatch) => {
+    if (match.source === 'response-header') {
+      return `response.header.${match.key || '*'}`;
+    }
+    if (match.source === 'response-body') {
+      return match.jsonPath ? `response.body${match.jsonPath.startsWith('$') ? match.jsonPath.slice(1) : `.${match.jsonPath}`}` : 'response.body';
+    }
+    if (match.source === 'request-header') {
+      return `request.header.${match.key || '*'}`;
+    }
+    if (match.source === 'request-body') {
+      return match.jsonPath ? `request.body${match.jsonPath.startsWith('$') ? match.jsonPath.slice(1) : `.${match.jsonPath}`}` : 'request.body';
+    }
+    return 'mapped.value';
+  };
+
+  const pickEdgePair = (fromMatches: MappingMatch[], toMatches: MappingMatch[]) => {
+    if (fromMatches.length === 0 || toMatches.length === 0) {
+      return null;
+    }
+
+    // Prefer explicit key-path continuity so edge labels explain concrete linkage.
+    for (const fromMatch of fromMatches) {
+      const fromKey = fromMatch.key || fromMatch.jsonPath || '';
+      if (!fromKey) {
+        continue;
+      }
+      const exact = toMatches.find((toMatch) => {
+        const toKey = toMatch.key || toMatch.jsonPath || '';
+        return toKey && toKey === fromKey;
+      });
+      if (exact) {
+        return { from: fromMatch, to: exact };
+      }
+    }
+
+    return { from: fromMatches[0], to: toMatches[0] };
+  };
+
+  const inferEdgeConfidence = (
+    from: InterceptedRequest,
+    to: InterceptedRequest,
+    pair?: { from: MappingMatch; to: MappingMatch } | null,
+    kind?: string,
+  ): { confidence: 'high' | 'medium' | 'low'; score: number } => {
+    let score = 0;
+    if (kind === 'response-to-request') {
+      score += 45;
+    } else if (kind === 'request-to-request') {
+      score += 25;
+    }
+
+    if (pair) {
+      const fromRef = pair.from.key || pair.from.jsonPath || '';
+      const toRef = pair.to.key || pair.to.jsonPath || '';
+      if (fromRef && toRef && fromRef === toRef) {
+        score += 35;
+      } else {
+        score += 15;
+      }
+      if (pair.from.source.startsWith('response') && pair.to.source.startsWith('request')) {
+        score += 15;
+      }
+    }
+
+    const deltaMs = to.timestamp - from.timestamp;
+    if (deltaMs >= 0 && deltaMs <= 45000) {
+      score += 10;
+    } else if (deltaMs > 45000 && deltaMs <= 180000) {
+      score += 5;
+    }
+
+    const sameHost = safeHostname(from.url) === safeHostname(to.url);
+    if (sameHost) {
+      score += 5;
+    }
+
+    if (score >= 80) {
+      return { confidence: 'high', score };
+    }
+    if (score >= 50) {
+      return { confidence: 'medium', score };
+    }
+    return { confidence: 'low', score };
+  };
+
+  const getEdgeRelation = (from: InterceptedRequest, to: InterceptedRequest) => {
+    const fromProfile = requestMatchProfile.get(from.id);
+    const toProfile = requestMatchProfile.get(to.id);
+    const sameHost = safeHostname(from.url) === safeHostname(to.url);
+
+    if (!fromProfile || !toProfile) {
+      return { valid: true, kind: 'unknown', label: 'mapped value', confidence: 'low' as const, score: 30 };
+    }
+
+    if (fromProfile.hasRes && toProfile.hasReq) {
+      const pair = pickEdgePair(fromProfile.responseMatches, toProfile.requestMatches);
+      const confidence = inferEdgeConfidence(from, to, pair, 'response-to-request');
+      if (pair) {
+        return {
+          valid: true,
+          kind: 'response-to-request',
+          label: `${describeMatchRef(pair.from)} -> ${describeMatchRef(pair.to)}`,
+          confidence: confidence.confidence,
+          score: confidence.score,
+        };
+      }
+      return {
+        valid: true,
+        kind: 'response-to-request',
+        label: 'response -> request',
+        confidence: confidence.confidence,
+        score: confidence.score,
+      };
+    }
+
+    if (fromProfile.hasReq && toProfile.hasReq) {
+      const pair = pickEdgePair(fromProfile.requestMatches, toProfile.requestMatches);
+      const confidence = inferEdgeConfidence(from, to, pair, 'request-to-request');
+      if (pair) {
+        return {
+          valid: true,
+          kind: 'request-to-request',
+          label: `${describeMatchRef(pair.from)} -> ${describeMatchRef(pair.to)}`,
+          confidence: confidence.confidence,
+          score: confidence.score,
+        };
+      }
+      return {
+        valid: true,
+        kind: 'request-to-request',
+        label: sameHost ? 'request -> request' : 'cross host request',
+        confidence: confidence.confidence,
+        score: confidence.score,
+      };
+    }
+
+    if (fromProfile.hasRes && toProfile.hasRes) {
+      return { valid: false, kind: 'response-to-response', label: 'weak relation', confidence: 'low' as const, score: 20 };
+    }
+
+    if (!fromProfile.hasRes && toProfile.hasReq) {
+      return { valid: false, kind: 'missing-source-response', label: 'missing source response', confidence: 'low' as const, score: 10 };
+    }
+
+    return { valid: false, kind: 'unclear', label: 'unclear relation', confidence: 'low' as const, score: 15 };
+  };
 
   const buildPairChainRequests = (matchId: string | null) => {
     const selectedMatch = mappingMatches.find((match) => match.id === matchId) || null;
@@ -1256,10 +1717,42 @@ export default function InterceptPanel() {
       result = [...result, selected];
     }
 
-    return result
+    const ordered = result
       .slice()
       .sort((a, b) => a.timestamp - b.timestamp)
       .filter((request, index, arr) => arr.findIndex((item) => item.id === request.id) === index);
+
+    if (ordered.length < 2) {
+      return ordered;
+    }
+
+    const validated: InterceptedRequest[] = [ordered[0]];
+    for (let i = 1; i < ordered.length; i += 1) {
+      const prev = validated[validated.length - 1];
+      const current = ordered[i];
+      const relation = getEdgeRelation(prev, current);
+      if (relation.valid || current.id === selected?.id) {
+        validated.push(current);
+      }
+    }
+    return validated;
+  };
+
+  const applyConfidenceFilterToChain = (requests: InterceptedRequest[]) => {
+    if (!hideLowConfidenceEdges || requests.length < 2) {
+      return requests;
+    }
+
+    const filtered: InterceptedRequest[] = [requests[0]];
+    for (let i = 1; i < requests.length; i += 1) {
+      const previous = filtered[filtered.length - 1];
+      const current = requests[i];
+      const relation = getEdgeRelation(previous, current);
+      if (relation.confidence !== 'low' || current.id === selected?.id) {
+        filtered.push(current);
+      }
+    }
+    return filtered;
   };
 
   const flowPreviewRequests = useMemo(() => {
@@ -1279,26 +1772,117 @@ export default function InterceptPanel() {
             unique.push(match.request);
           }
         });
-      const result = unique;
-      if (!showOnlyMatchedRequests) return result;
-      return result.filter((request) => matchedRequestIds.has(request.id));
+      let result = unique;
+      if (showOnlyMatchedRequests) {
+        result = result.filter((request) => matchedRequestIds.has(request.id));
+      }
+      if (hideStaticAssetsInFlow) {
+        result = result.filter((request) => !isStaticAssetRequest(request));
+      }
+      if (showOnlyAuthFlow) {
+        result = result.filter((request) => isAuthRelatedRequest(request));
+      }
+      if (hideDuplicatePollingInFlow) {
+        const deduped: InterceptedRequest[] = [];
+        const seenSignature = new Map<string, number>();
+        result.forEach((request) => {
+          const signature = `${request.method} ${request.url}`;
+          const prevTs = seenSignature.get(signature);
+          if (typeof prevTs === 'number' && Math.abs(request.timestamp - prevTs) <= 15000) {
+            return;
+          }
+          seenSignature.set(signature, request.timestamp);
+          deduped.push(request);
+        });
+        result = deduped;
+      }
+      return applyConfidenceFilterToChain(result);
     }
 
-    const result = buildPairChainRequests(selectedMatchId);
+    let result = buildPairChainRequests(selectedMatchId);
 
-    if (!showOnlyMatchedRequests) return result;
-    return result.filter((request) => matchedRequestIds.has(request.id));
-  }, [mappingMatches, mappingMode, matchedRequestIds, selected, selectedMatchId, showOnlyMatchedRequests]);
+    if (showOnlyMatchedRequests) {
+      result = result.filter((request) => matchedRequestIds.has(request.id));
+    }
+    if (hideStaticAssetsInFlow) {
+      result = result.filter((request) => !isStaticAssetRequest(request));
+    }
+    if (showOnlyAuthFlow) {
+      result = result.filter((request) => isAuthRelatedRequest(request));
+    }
+    if (hideDuplicatePollingInFlow) {
+      const deduped: InterceptedRequest[] = [];
+      const seenSignature = new Map<string, number>();
+      result.forEach((request) => {
+        const signature = `${request.method} ${request.url}`;
+        const prevTs = seenSignature.get(signature);
+        if (typeof prevTs === 'number' && Math.abs(request.timestamp - prevTs) <= 15000) {
+          return;
+        }
+        seenSignature.set(signature, request.timestamp);
+        deduped.push(request);
+      });
+      result = deduped;
+    }
+
+    return applyConfidenceFilterToChain(result);
+  }, [
+    hideLowConfidenceEdges,
+    hideDuplicatePollingInFlow,
+    hideStaticAssetsInFlow,
+    mappingMatches,
+    mappingMode,
+    matchedRequestIds,
+    selected,
+    selectedMatchId,
+    showOnlyAuthFlow,
+    showOnlyMatchedRequests,
+  ]);
 
   const flowPreviewEdges = useMemo(() => {
     if (flowPreviewRequests.length < 2) {
-      return [] as Array<{ from: InterceptedRequest; to: InterceptedRequest }>;
+      return [] as Array<{ from: InterceptedRequest; to: InterceptedRequest; relation: string; confidence: 'high' | 'medium' | 'low'; score: number; }>;
     }
-    return flowPreviewRequests.slice(0, -1).map((request, index) => ({
-      from: request,
-      to: flowPreviewRequests[index + 1],
-    }));
+    return flowPreviewRequests.slice(0, -1).map((request, index) => {
+      const analysis = getEdgeRelation(request, flowPreviewRequests[index + 1]);
+      return {
+        from: request,
+        to: flowPreviewRequests[index + 1],
+        relation: analysis.label,
+        confidence: analysis.confidence,
+        score: analysis.score,
+      };
+    });
   }, [flowPreviewRequests]);
+
+  const autoFlowLayout = useMemo<'horizontal' | 'vertical'>(() => {
+    if (flowPreviewRequests.length <= 1) {
+      return 'horizontal';
+    }
+
+    if (mappingMode === 'global') {
+      const hosts = new Set(flowPreviewRequests.map((request) => safeHostname(request.url)));
+      return hosts.size <= 1 ? 'horizontal' : 'vertical';
+    }
+
+    if (!selectedSourceMatch || !selected) {
+      return 'horizontal';
+    }
+
+    const sourceFromResponse = selectedSourceMatch.source.startsWith('response');
+    const sameRequest = selectedSourceMatch.request.id === selected.id;
+    const sameHost = safeHostname(selectedSourceMatch.request.url) === safeHostname(selected.url);
+
+    if (sourceFromResponse && !sameRequest) {
+      return 'vertical';
+    }
+
+    if (!sameHost) {
+      return 'vertical';
+    }
+
+    return 'horizontal';
+  }, [flowPreviewRequests, mappingMode, selected, selectedSourceMatch]);
 
   const statusEdgeClass = (status?: number) => {
     if (!status) return 'bg-app-border';
@@ -1309,11 +1893,25 @@ export default function InterceptPanel() {
     return 'bg-app-border';
   };
 
+  const confidenceBadgeClass = (confidence: 'high' | 'medium' | 'low') => {
+    if (confidence === 'high') return 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300';
+    if (confidence === 'medium') return 'border-amber-500/40 bg-amber-500/10 text-amber-300';
+    return 'border-rose-500/40 bg-rose-500/10 text-rose-300';
+  };
+
   const toggleFlowNodeExpanded = (requestId: string) => {
     setExpandedFlowNodeIds((prev) => (
       prev.includes(requestId)
         ? prev.filter((id) => id !== requestId)
         : [...prev, requestId]
+    ));
+  };
+
+  const toggleBodyPanelExpanded = (panelId: string) => {
+    setExpandedBodyPanelIds((prev) => (
+      prev.includes(panelId)
+        ? prev.filter((id) => id !== panelId)
+        : [...prev, panelId]
     ));
   };
 
@@ -2647,41 +3245,58 @@ export default function InterceptPanel() {
                     >
                       Compact
                     </button>
+                    <button
+                      onClick={() => setHideStaticAssetsInFlow((prev) => !prev)}
+                      className={`px-2 py-1 text-[11px] rounded border ${
+                        hideStaticAssetsInFlow
+                          ? 'border-app-accent bg-app-active text-app-text'
+                          : 'border-app-border text-app-muted hover:text-app-text hover:bg-app-hover'
+                      }`}
+                    >
+                      Hide static
+                    </button>
+                    <button
+                      onClick={() => setHideDuplicatePollingInFlow((prev) => !prev)}
+                      className={`px-2 py-1 text-[11px] rounded border ${
+                        hideDuplicatePollingInFlow
+                          ? 'border-app-accent bg-app-active text-app-text'
+                          : 'border-app-border text-app-muted hover:text-app-text hover:bg-app-hover'
+                      }`}
+                    >
+                      Hide duplicate
+                    </button>
+                    <button
+                      onClick={() => setShowOnlyAuthFlow((prev) => !prev)}
+                      className={`px-2 py-1 text-[11px] rounded border ${
+                        showOnlyAuthFlow
+                          ? 'border-app-accent bg-app-active text-app-text'
+                          : 'border-app-border text-app-muted hover:text-app-text hover:bg-app-hover'
+                      }`}
+                    >
+                      Auth only
+                    </button>
+                    <button
+                      onClick={() => setHideLowConfidenceEdges((prev) => !prev)}
+                      className={`px-2 py-1 text-[11px] rounded border ${
+                        hideLowConfidenceEdges
+                          ? 'border-app-accent bg-app-active text-app-text'
+                          : 'border-app-border text-app-muted hover:text-app-text hover:bg-app-hover'
+                      }`}
+                    >
+                      Hide low confidence
+                    </button>
+                    <span className="px-2 py-1 text-[11px] rounded border border-app-border text-app-muted bg-app-panel">
+                      Auto: {autoFlowLayout}
+                    </span>
                   </div>
-                  <button
-                    onClick={() => setFlowLayout('horizontal')}
-                    className={`px-2 py-1 text-[11px] rounded border ${
-                      flowLayout === 'horizontal'
-                        ? 'border-app-accent bg-app-active text-app-text'
-                        : 'border-app-border text-app-muted hover:text-app-text hover:bg-app-hover'
-                    }`}
-                  >
-                    Horizontal
-                  </button>
-                  <button
-                    onClick={() => setFlowLayout('vertical')}
-                    className={`px-2 py-1 text-[11px] rounded border ${
-                      flowLayout === 'vertical'
-                        ? 'border-app-accent bg-app-active text-app-text'
-                        : 'border-app-border text-app-muted hover:text-app-text hover:bg-app-hover'
-                    }`}
-                  >
-                    Vertical
-                  </button>
-                  <button
-                    onClick={resetFlowLayout}
-                    className="px-2 py-1 text-[11px] rounded border border-app-border text-app-muted hover:text-app-text hover:bg-app-hover"
-                  >
-                    Reset
-                  </button>
                 </div>
               </div>
               <div className="border border-app-border rounded bg-app-bg p-3">
                 {flowPreviewRequests.length === 0 ? (
                   <div className="text-sm text-app-muted">No flow preview yet.</div>
                 ) : (
-                  <div className={flowLayout === 'horizontal' ? 'overflow-x-auto' : 'overflow-y-auto'}>
-                    <div className={flowLayout === 'horizontal' ? 'flex items-start gap-4 min-w-max' : 'flex flex-col gap-4'}>
+                  <div className={autoFlowLayout === 'horizontal' ? 'overflow-x-auto' : 'overflow-y-auto'}>
+                    <div className={autoFlowLayout === 'horizontal' ? 'flex items-start gap-4 min-w-max' : 'flex flex-col gap-4'}>
                       {flowPreviewRequests.map((request, index) => {
                         const label = formatFlowLabel(request);
                         const isHighlighted = highlightedRequestId === request.id;
@@ -2696,7 +3311,7 @@ export default function InterceptPanel() {
                           : (hasResponse ? 'Response' : 'Pending');
 
                         return (
-                          <div key={request.id} className={flowLayout === 'horizontal' ? 'flex items-center' : 'flex flex-col'}>
+                          <div key={request.id} className={autoFlowLayout === 'horizontal' ? 'flex items-center' : 'flex flex-col'}>
                             <div
                               className="space-y-2 cursor-pointer"
                               onClick={() => toggleFlowNodeExpanded(request.id)}
@@ -2728,39 +3343,181 @@ export default function InterceptPanel() {
                                 )}
                               </div>
                               {isExpanded && (
-                                <div className="border border-app-border rounded bg-app-bg px-3 py-2 text-[11px] space-y-2">
-                                  <div className="text-app-muted uppercase tracking-wider">Request detail</div>
-                                  <div className="text-app-text break-all">{request.method} {request.url}</div>
-                                  <div className="text-app-muted">
-                                    Headers: {Object.keys(request.headers || {}).length}
-                                  </div>
-                                  {request.body ? (
-                                    <div className="text-app-muted break-words">
-                                      Body: {truncateFlowText(String(request.body))}
+                                <div
+                                  className="border border-app-border rounded bg-app-bg text-[11px] overflow-hidden"
+                                  onClick={(event) => event.stopPropagation()}
+                                >
+                                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-0">
+                                    <div className="border-b xl:border-b-0 xl:border-r border-app-border">
+                                      <div className="px-3 py-2 bg-app-panel border-b border-app-border flex items-center justify-between">
+                                        <span className="text-app-muted uppercase tracking-wider">Request</span>
+                                        <span className="text-app-text font-semibold">{request.method}</span>
+                                      </div>
+                                      <div className="p-3 space-y-2">
+                                        <div className="flex items-center gap-2">
+                                          <button
+                                            onClick={() => {
+                                              void copyText(extractMappedValueFromRequest(request));
+                                              toast.success('Mapped value copied');
+                                            }}
+                                            className="flex items-center gap-1 px-2 py-1 text-[11px] rounded border border-app-border text-app-muted hover:text-app-text hover:bg-app-hover"
+                                          >
+                                            <Copy size={11} /> Copy value
+                                          </button>
+                                          <button
+                                            onClick={() => {
+                                              void copyText(buildCurlCommand(request));
+                                              toast.success('cURL copied');
+                                            }}
+                                            className="flex items-center gap-1 px-2 py-1 text-[11px] rounded border border-app-border text-app-muted hover:text-app-text hover:bg-app-hover"
+                                          >
+                                            <Copy size={11} /> Copy cURL
+                                          </button>
+                                          <button
+                                            onClick={() => {
+                                              handleSelect(request);
+                                              setMappingOpen(false);
+                                            }}
+                                            className="flex items-center gap-1 px-2 py-1 text-[11px] rounded border border-app-border text-app-muted hover:text-app-text hover:bg-app-hover"
+                                          >
+                                            Open in traffic
+                                          </button>
+                                        </div>
+                                        <div className="text-app-text break-all">{request.url}</div>
+                                        <div className="text-app-muted">Headers ({previewHeaderEntries(request.headers).total})</div>
+                                        <div className="rounded border border-app-border bg-app-panel p-2 space-y-1 max-h-24 overflow-y-auto">
+                                          {previewHeaderEntries(request.headers).visible.length > 0 ? (
+                                            previewHeaderEntries(request.headers).visible.map(([key, value]) => (
+                                              <div key={`req-${request.id}-${key}`} className="text-app-muted break-all">
+                                                <span className="text-app-text">{key}:</span> {truncateFlowText(String(value), 140)}
+                                              </div>
+                                            ))
+                                          ) : (
+                                            <div className="text-app-muted">No headers</div>
+                                          )}
+                                          {previewHeaderEntries(request.headers).remaining > 0 && (
+                                            <div className="text-app-muted">+{previewHeaderEntries(request.headers).remaining} more headers</div>
+                                          )}
+                                        </div>
+                                        <div className="flex items-center justify-between">
+                                          <div className="text-app-muted">Body</div>
+                                          <button
+                                            onClick={() => toggleBodyPanelExpanded(`${request.id}:req`) }
+                                            className="px-2 py-0.5 text-[11px] rounded border border-app-border text-app-muted hover:text-app-text hover:bg-app-hover"
+                                          >
+                                            {expandedBodyPanelIds.includes(`${request.id}:req`) ? 'Hide full' : 'View full'}
+                                          </button>
+                                        </div>
+                                        <pre className="rounded border border-app-border bg-app-panel p-2 text-app-muted whitespace-pre-wrap break-words max-h-28 overflow-y-auto font-mono">
+                                          {request.body ? truncateFlowText(String(request.body), 480) : '(empty)'}
+                                        </pre>
+                                        {expandedBodyPanelIds.includes(`${request.id}:req`) && (
+                                          <div className="border border-app-border rounded overflow-hidden">
+                                            <Editor
+                                              height="180px"
+                                              language={detectLanguage(
+                                                request.headers?.['content-type'] || request.headers?.['Content-Type'] || '',
+                                                String(request.body || ''),
+                                              )}
+                                              value={String(request.body || '')}
+                                              theme="vs-dark"
+                                              options={{
+                                                readOnly: true,
+                                                minimap: { enabled: false },
+                                                fontSize: 12,
+                                                lineNumbers: 'on',
+                                                wordWrap: 'on',
+                                                scrollBeyondLastLine: false,
+                                                automaticLayout: true,
+                                              }}
+                                            />
+                                          </div>
+                                        )}
+                                      </div>
                                     </div>
-                                  ) : (
-                                    <div className="text-app-muted">Body: (empty)</div>
-                                  )}
 
-                                  <div className="pt-1 text-app-muted uppercase tracking-wider">Response detail</div>
-                                  <div className="text-app-muted">
-                                    Status: {request.responseStatusCode ? `HTTP ${request.responseStatusCode}` : 'Pending'}
-                                  </div>
-                                  <div className="text-app-muted">
-                                    Headers: {Object.keys(request.responseHeaders || {}).length}
-                                  </div>
-                                  {request.responseBody ? (
-                                    <div className="text-app-muted break-words">
-                                      Body: {truncateFlowText(String(request.responseBody))}
+                                    <div>
+                                      <div className="px-3 py-2 bg-app-panel border-b border-app-border flex items-center justify-between">
+                                        <span className="text-app-muted uppercase tracking-wider">Response</span>
+                                        <span className={`font-semibold ${responseStatusTextClass(request.responseStatusCode)}`}>
+                                          {request.responseStatusCode ? `HTTP ${request.responseStatusCode}` : 'Pending'}
+                                        </span>
+                                      </div>
+                                      <div className="p-3 space-y-2">
+                                        <div className="flex items-center gap-2">
+                                          <button
+                                            onClick={() => {
+                                              const raw = request.responseBody || '';
+                                              void copyText(raw);
+                                              toast.success('Response copied');
+                                            }}
+                                            className="flex items-center gap-1 px-2 py-1 text-[11px] rounded border border-app-border text-app-muted hover:text-app-text hover:bg-app-hover"
+                                          >
+                                            <Copy size={11} /> Copy response
+                                          </button>
+                                        </div>
+                                        {request.responseTimestamp && (
+                                          <div className="text-app-muted">
+                                            Received: {new Date(request.responseTimestamp).toLocaleTimeString()}
+                                          </div>
+                                        )}
+                                        <div className="text-app-muted">Headers ({previewHeaderEntries(request.responseHeaders).total})</div>
+                                        <div className="rounded border border-app-border bg-app-panel p-2 space-y-1 max-h-24 overflow-y-auto">
+                                          {previewHeaderEntries(request.responseHeaders).visible.length > 0 ? (
+                                            previewHeaderEntries(request.responseHeaders).visible.map(([key, value]) => (
+                                              <div key={`res-${request.id}-${key}`} className="text-app-muted break-all">
+                                                <span className="text-app-text">{key}:</span> {truncateFlowText(String(value), 140)}
+                                              </div>
+                                            ))
+                                          ) : (
+                                            <div className="text-app-muted">No headers</div>
+                                          )}
+                                          {previewHeaderEntries(request.responseHeaders).remaining > 0 && (
+                                            <div className="text-app-muted">+{previewHeaderEntries(request.responseHeaders).remaining} more headers</div>
+                                          )}
+                                        </div>
+                                        <div className="flex items-center justify-between">
+                                          <div className="text-app-muted">Body</div>
+                                          <button
+                                            onClick={() => toggleBodyPanelExpanded(`${request.id}:res`) }
+                                            className="px-2 py-0.5 text-[11px] rounded border border-app-border text-app-muted hover:text-app-text hover:bg-app-hover"
+                                          >
+                                            {expandedBodyPanelIds.includes(`${request.id}:res`) ? 'Hide full' : 'View full'}
+                                          </button>
+                                        </div>
+                                        <pre className="rounded border border-app-border bg-app-panel p-2 text-app-muted whitespace-pre-wrap break-words max-h-28 overflow-y-auto font-mono">
+                                          {request.responseBody ? truncateFlowText(String(request.responseBody), 480) : '(empty)'}
+                                        </pre>
+                                        {expandedBodyPanelIds.includes(`${request.id}:res`) && (
+                                          <div className="border border-app-border rounded overflow-hidden">
+                                            <Editor
+                                              height="180px"
+                                              language={detectLanguage(
+                                                request.responseHeaders?.['content-type'] || request.responseHeaders?.['Content-Type'] || '',
+                                                String(request.responseBody || ''),
+                                              )}
+                                              value={String(request.responseBody || '')}
+                                              theme="vs-dark"
+                                              options={{
+                                                readOnly: true,
+                                                minimap: { enabled: false },
+                                                fontSize: 12,
+                                                lineNumbers: 'on',
+                                                wordWrap: 'on',
+                                                scrollBeyondLastLine: false,
+                                                automaticLayout: true,
+                                              }}
+                                            />
+                                          </div>
+                                        )}
+                                      </div>
                                     </div>
-                                  ) : (
-                                    <div className="text-app-muted">Body: (empty)</div>
-                                  )}
+                                  </div>
                                 </div>
                               )}
                             </div>
                             {index < flowPreviewRequests.length - 1 && (
-                              flowLayout === 'horizontal' ? (
+                              autoFlowLayout === 'horizontal' ? (
                                 <div className={compactFlowPreview ? 'flex items-center px-2' : 'flex items-center px-3'}>
                                   <div className={`h-px ${compactFlowPreview ? 'w-6' : 'w-10'} ${statusEdgeClass(flowPreviewRequests[index + 1].responseStatusCode)}`} />
                                   <div className={`ml-1 h-2 w-2 border-t border-r ${statusEdgeClass(flowPreviewRequests[index + 1].responseStatusCode)} rotate-45`} />
@@ -2793,6 +3550,13 @@ export default function InterceptPanel() {
                           <span className="text-app-text">{fromLabel.path}</span>
                           <span className="text-app-muted">→</span>
                           <span className="text-app-text">{toLabel.path}</span>
+                          <span className={`px-1.5 py-0.5 rounded border ${confidenceBadgeClass(edge.confidence)}`}>
+                            {edge.confidence}
+                          </span>
+                          <span className="px-1.5 py-0.5 rounded border border-app-border bg-app-panel text-app-muted">
+                            {edge.score}
+                          </span>
+                          <span className="px-1.5 py-0.5 rounded border border-app-border bg-app-panel text-app-muted">{edge.relation}</span>
                           <span className="px-1.5 py-0.5 rounded bg-app-hover text-app-muted">{`{{${keyName}}}`}</span>
                         </div>
                       );
