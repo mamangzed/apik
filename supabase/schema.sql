@@ -10,12 +10,20 @@ create table if not exists public.apix_collections (
   collection_share_token text unique,
   docs_access text not null default 'private' check (docs_access in ('private', 'public')),
   docs_share_token text unique,
+  form_access text not null default 'private' check (form_access in ('private', 'public')),
+  form_share_token text unique,
   created_at timestamptz not null default timezone('utc', now()),
   updated_at timestamptz not null default timezone('utc', now())
 );
 
+alter table public.apix_collections
+  add column if not exists form_access text not null default 'private' check (form_access in ('private', 'public'));
+
+alter table public.apix_collections
+  add column if not exists form_share_token text unique;
+
 create index if not exists apix_collections_owner_idx on public.apix_collections (owner_user_id, updated_at desc);
-create index if not exists apix_collections_public_idx on public.apix_collections (collection_share_token, docs_share_token);
+create index if not exists apix_collections_public_idx on public.apix_collections (collection_share_token, docs_share_token, form_share_token);
 
 create table if not exists public.apix_collection_members (
   collection_id text not null references public.apix_collections(id) on delete cascade,

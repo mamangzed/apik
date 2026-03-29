@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { getPublicCollectionByToken, getPublicDocsByToken } from '../storage/supabaseStore';
+import { getPublicCollectionByToken, getPublicDocsByToken, getPublicFormByToken } from '../storage/supabaseStore';
 
 const router = Router();
 
@@ -24,6 +24,16 @@ router.get('/docs/:token', async (req: Request, res: Response) => {
   const collection = await getPublicDocsByToken(req.params.token);
   if (!collection) {
     res.status(404).json({ error: 'Shared documentation not found' });
+    return;
+  }
+
+  res.json(collection);
+});
+
+router.get('/forms/:token', async (req: Request, res: Response) => {
+  const collection = await getPublicFormByToken(req.params.token);
+  if (!collection) {
+    res.status(404).json({ error: 'Shared form not found' });
     return;
   }
 

@@ -661,6 +661,7 @@ export default function App({ clerkEnabled }: AppProps) {
     <Routes>
       <Route path="/share/collections/:token" element={<PublicCollectionPage />} />
       <Route path="/share/docs/:token" element={<PublicDocsPage />} />
+      <Route path="/share/forms/:token" element={<PublicCollectionPage shareMode="form" />} />
       <Route
         path="/sign-in/*"
         element={

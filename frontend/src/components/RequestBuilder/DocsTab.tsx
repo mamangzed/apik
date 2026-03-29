@@ -38,6 +38,7 @@ function normalizeImportedFormConfig(raw: unknown): RequestFormConfig | null {
       name: typeof field.name === 'string' ? field.name : `field_${Math.random().toString(36).slice(2, 7)}`,
       label: typeof field.label === 'string' ? field.label : 'Field',
       type: typeof field.type === 'string' ? (field.type as RequestFormFieldType) : 'text',
+      layoutWidth: field.layoutWidth === 'full' ? 'full' : 'half',
       required: Boolean(field.required),
       target: typeof field.target === 'string' ? (field.target as RequestFormFieldTarget) : 'body-json',
       targetKey: typeof field.targetKey === 'string' ? field.targetKey : 'value',
@@ -181,6 +182,7 @@ function createCustomField(): RequestFormField {
     name: `field_${Math.random().toString(36).slice(2, 7)}`,
     label: 'Custom Field',
     type: 'text',
+    layoutWidth: 'half',
     required: false,
     target: 'body-json',
     targetKey: 'customField',
@@ -874,6 +876,7 @@ Returns a JSON object with user data."
                       <Plus size={12} /> Add Custom Field
                     </button>
                   </div>
+                  <p className="text-[11px] text-app-muted">Drag field cards to reorder position. Use Layout Width for half/full placement.</p>
 
                   {formConfig.fields.length === 0 && (
                     <div className="text-xs text-app-muted border border-dashed border-app-border rounded p-3">
@@ -988,6 +991,21 @@ Returns a JSON object with user data."
                             className="input-field mt-1 text-xs"
                             placeholder="Authentication / Billing / Profile"
                           />
+                        </label>
+                        <label className="text-xs text-app-muted">
+                          Layout Width
+                          <select
+                            value={field.layoutWidth || 'half'}
+                            onChange={(event) =>
+                              updateField(field.id, {
+                                layoutWidth: event.target.value === 'full' ? 'full' : 'half',
+                              })
+                            }
+                            className="input-field mt-1 text-xs bg-app-panel"
+                          >
+                            <option value="half">Half width (2-column)</option>
+                            <option value="full">Full width</option>
+                          </select>
                         </label>
 
                         {(field.type === 'number' || field.type === 'range') && (

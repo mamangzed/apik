@@ -394,15 +394,26 @@ export default function Sidebar() {
                 <Activity size={13} /> View Runs & Activity
               </button>
               {storageMode === 'remote' && (
-                <button
-                  className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-app-hover text-app-text transition-colors"
-                  onClick={() => {
-                    openShareModal(contextMenu.id, 'collection');
-                    closeContextMenu();
-                  }}
-                >
-                  <Share2 size={13} /> Share Collection
-                </button>
+                <>
+                  <button
+                    className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-app-hover text-app-text transition-colors"
+                    onClick={() => {
+                      openShareModal(contextMenu.id, 'collection');
+                      closeContextMenu();
+                    }}
+                  >
+                    <Share2 size={13} /> Share Collection
+                  </button>
+                  <button
+                    className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-app-hover text-app-text transition-colors"
+                    onClick={() => {
+                      openShareModal(contextMenu.id, 'form');
+                      closeContextMenu();
+                    }}
+                  >
+                    <Share2 size={13} /> Share Form
+                  </button>
+                </>
               )}
               <button
                 className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-app-hover text-app-text transition-colors"

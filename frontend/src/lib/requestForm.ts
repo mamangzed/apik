@@ -53,6 +53,7 @@ function createField(target: RequestFormFieldTarget, targetKey: string, type: Re
     name: baseName,
     label: toLabel(safeTargetKey),
     type,
+    layoutWidth: 'half',
     required: false,
     target,
     targetKey: safeTargetKey,

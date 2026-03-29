@@ -4,9 +4,10 @@ import { ArrowLeft, Book } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { apiClient } from '../../lib/apiClient';
-import { PublicCollectionResponse } from '../../types';
+import { PublicCollectionResponse, RequestFormField } from '../../types';
 import { METHOD_BG_COLORS } from '../../utils/format';
 import CodeSnippetViewer from '../Common/CodeSnippetViewer';
+import { isFieldVisible } from '../../lib/requestForm';
 
 function MarkdownBlock({ content }: { content: string }) {
   const normalized = content
@@ -43,6 +44,7 @@ export default function PublicDocsPage() {
   const { token } = useParams();
   const [collection, setCollection] = useState<PublicCollectionResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [formValuesByRequest, setFormValuesByRequest] = useState<Record<string, Record<string, string>>>({});
 
   useEffect(() => {
     const html = document.documentElement;
@@ -121,6 +123,20 @@ export default function PublicDocsPage() {
       try {
         const { data } = await apiClient.get<PublicCollectionResponse>(`/public/docs/${token}`);
         setCollection(data);
+        setFormValuesByRequest(() => {
+          const next: Record<string, Record<string, string>> = {};
+          data.requests.forEach((request) => {
+            if (!request.formConfig?.enabled) {
+              return;
+            }
+            const initial: Record<string, string> = {};
+            (request.formConfig.fields || []).forEach((field) => {
+              initial[field.name] = field.defaultValue || '';
+            });
+            next[request.id] = initial;
+          });
+          return next;
+        });
       } catch (requestError) {
         setError(requestError instanceof Error ? requestError.message : 'Failed to load shared docs');
       }
@@ -136,6 +152,16 @@ export default function PublicDocsPage() {
   if (!collection) {
     return <div className="min-h-screen bg-app-bg text-app-text flex items-center justify-center">Loading documentation...</div>;
   }
+
+  const updateFormValue = (requestId: string, fieldName: string, value: string) => {
+    setFormValuesByRequest((previous) => ({
+      ...previous,
+      [requestId]: {
+        ...(previous[requestId] || {}),
+        [fieldName]: value,
+      },
+    }));
+  };
 
   return (
     <div className="min-h-screen bg-app-bg text-app-text">
@@ -197,17 +223,142 @@ export default function PublicDocsPage() {
                 {request.formConfig?.enabled && (
                   <div>
                     <div className="text-xs uppercase tracking-wider text-app-muted mb-2">Interactive Form</div>
-                    <div className="rounded border border-app-border overflow-hidden">
-                      {(request.formConfig.fields || []).map((field) => (
-                        <div key={field.id} className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 px-4 py-2 text-sm border-t border-app-border first:border-t-0">
-                          <span className="text-blue-300 font-mono sm:min-w-32 break-all">{field.label}</span>
-                          <span className="text-app-muted font-mono break-all">{field.type} | {field.target}{' -> '}{field.targetKey}</span>
-                          {field.group && <span className="text-[11px] text-cyan-300">group:{field.group}</span>}
-                          {field.required && <span className="text-[11px] text-red-300">required</span>}
-                          {field.repeatable && <span className="text-[11px] text-amber-300">array:{field.repeatSeparator || 'newline'}</span>}
-                          {field.visibilityDependsOnFieldName && (
-                            <span className="text-[11px] text-app-muted">visible-if:{field.visibilityDependsOnFieldName}</span>
-                          )}
+                    <div className="rounded border border-app-border p-3 bg-app-active/20 space-y-3">
+                      <p className="text-xs text-app-muted">Fillable HTML form generated from endpoint configuration.</p>
+                      {Object.entries(
+                        (request.formConfig.fields || []).reduce<Record<string, RequestFormField[]>>((acc, field) => {
+                          const currentValues = formValuesByRequest[request.id] || {};
+                          if (!isFieldVisible(field, currentValues)) {
+                            return acc;
+                          }
+
+                          const group = (field.group || 'General').trim() || 'General';
+                          if (!acc[group]) {
+                            acc[group] = [];
+                          }
+                          acc[group].push(field);
+                          return acc;
+                        }, {}),
+                      ).map(([groupName, groupedFields]) => (
+                        <div key={`${request.id}-${groupName}`} className="space-y-2">
+                          <p className="text-[11px] uppercase tracking-wider text-app-muted">{groupName}</p>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                            {groupedFields.map((field) => (
+                              <label key={field.id} className={`text-xs text-app-muted block ${field.layoutWidth === 'full' ? 'md:col-span-2' : ''}`}>
+                                <span className="inline-flex items-center gap-1">
+                                  {field.label}
+                                  {field.required && <span className="text-red-300">*</span>}
+                                </span>
+
+                                {field.type === 'textarea' || field.repeatable || field.type === 'json' || field.type === 'address' ? (
+                                  <textarea
+                                    value={formValuesByRequest[request.id]?.[field.name] || ''}
+                                    onChange={(event) => updateFormValue(request.id, field.name, event.target.value)}
+                                    placeholder={field.placeholder || ''}
+                                    className="input-field mt-1 text-xs min-h-20"
+                                  />
+                                ) : field.type === 'select' ? (
+                                  <select
+                                    value={formValuesByRequest[request.id]?.[field.name] || ''}
+                                    onChange={(event) => updateFormValue(request.id, field.name, event.target.value)}
+                                    className="input-field mt-1 text-xs bg-app-panel"
+                                  >
+                                    <option value="">Select...</option>
+                                    {(field.options || []).map((option) => (
+                                      <option key={option.id} value={option.value}>{option.label || option.value}</option>
+                                    ))}
+                                  </select>
+                                ) : field.type === 'radio' ? (
+                                  <div className="mt-1 flex flex-wrap gap-2">
+                                    {(field.options || []).map((option) => (
+                                      <label key={option.id} className="inline-flex items-center gap-1">
+                                        <input
+                                          type="radio"
+                                          name={`${request.id}_${field.id}`}
+                                          value={option.value}
+                                          checked={(formValuesByRequest[request.id]?.[field.name] || '') === option.value}
+                                          onChange={(event) => updateFormValue(request.id, field.name, event.target.value)}
+                                          className="w-3.5 h-3.5 accent-orange-500"
+                                        />
+                                        <span>{option.label || option.value}</span>
+                                      </label>
+                                    ))}
+                                  </div>
+                                ) : field.type === 'checkbox' ? (
+                                  <input
+                                    type="checkbox"
+                                    checked={(formValuesByRequest[request.id]?.[field.name] || '') === 'true'}
+                                    onChange={(event) => updateFormValue(request.id, field.name, event.target.checked ? 'true' : 'false')}
+                                    className="mt-2 w-4 h-4 accent-orange-500"
+                                  />
+                                ) : field.type === 'file' ? (
+                                  <input
+                                    type="file"
+                                    multiple={Boolean(field.multiple)}
+                                    accept={field.accept || undefined}
+                                    onChange={(event) => {
+                                      const files = event.target.files;
+                                      if (!files || files.length === 0) {
+                                        updateFormValue(request.id, field.name, '');
+                                        return;
+                                      }
+                                      const names = Array.from(files).map((file) => file.name).join(', ');
+                                      updateFormValue(request.id, field.name, names);
+                                    }}
+                                    className="mt-1 text-xs text-app-muted"
+                                  />
+                                ) : field.type === 'range' ? (
+                                  <div className="mt-1 space-y-1">
+                                    <input
+                                      type="range"
+                                      value={formValuesByRequest[request.id]?.[field.name] || String(field.min ?? 0)}
+                                      min={field.min}
+                                      max={field.max}
+                                      step={field.step}
+                                      onChange={(event) => updateFormValue(request.id, field.name, event.target.value)}
+                                      className="w-full accent-orange-500"
+                                    />
+                                    <p className="text-[11px] text-app-muted">Value: {formValuesByRequest[request.id]?.[field.name] || String(field.min ?? 0)}</p>
+                                  </div>
+                                ) : (
+                                  <input
+                                    type={
+                                      field.type === 'password'
+                                        ? 'password'
+                                        : field.type === 'number'
+                                          ? 'number'
+                                          : field.type === 'email'
+                                            ? 'email'
+                                            : field.type === 'tel'
+                                              ? 'tel'
+                                              : field.type === 'url'
+                                                ? 'url'
+                                                : field.type === 'date'
+                                                  ? 'date'
+                                                  : field.type === 'time'
+                                                    ? 'time'
+                                                    : field.type === 'datetime-local'
+                                                      ? 'datetime-local'
+                                                      : field.type === 'color'
+                                                        ? 'color'
+                                                        : 'text'
+                                    }
+                                    value={formValuesByRequest[request.id]?.[field.name] || ''}
+                                    onChange={(event) => updateFormValue(request.id, field.name, event.target.value)}
+                                    placeholder={field.placeholder || ''}
+                                    min={field.min}
+                                    max={field.max}
+                                    step={field.step}
+                                    pattern={field.pattern || undefined}
+                                    className="input-field mt-1 text-xs"
+                                  />
+                                )}
+
+                                <span className="block mt-1 text-[11px] text-app-muted font-mono">map: {field.target}{' -> '}{field.targetKey}</span>
+                                {field.description && <span className="block mt-1 text-[11px] text-app-muted">{field.description}</span>}
+                              </label>
+                            ))}
+                          </div>
                         </div>
                       ))}
                     </div>

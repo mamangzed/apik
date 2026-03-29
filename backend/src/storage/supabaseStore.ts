@@ -23,6 +23,8 @@ type CollectionRow = {
   collection_share_token: string | null;
   docs_access: VisibilityMode;
   docs_share_token: string | null;
+  form_access: VisibilityMode;
+  form_share_token: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -54,6 +56,7 @@ function defaultSharing(): CollectionSharing {
   return {
     collection: defaultShareSettings(),
     docs: defaultShareSettings(),
+    form: defaultShareSettings(),
   };
 }
 
@@ -66,6 +69,10 @@ export function normalizeSharing(sharing?: Partial<CollectionSharing>): Collecti
     docs: {
       access: sharing?.docs?.access ?? 'private',
       token: sharing?.docs?.token ?? null,
+    },
+    form: {
+      access: sharing?.form?.access ?? 'private',
+      token: sharing?.form?.token ?? null,
     },
   };
 }
@@ -133,6 +140,10 @@ function mapCollectionRow(
         access: row.docs_access || document.sharing.docs.access,
         token: row.docs_share_token,
       },
+      form: {
+        access: row.form_access || document.sharing.form.access,
+        token: row.form_share_token,
+      },
     },
     collaborators: options?.collaborators ?? document.collaborators ?? [],
     currentUserRole: options?.currentUserRole ?? document.currentUserRole,
@@ -172,6 +183,8 @@ function toCollectionRow(ownerUserId: string, collection: Collection) {
     collection_share_token: collection.sharing.collection.token,
     docs_access: collection.sharing.docs.access,
     docs_share_token: collection.sharing.docs.token,
+    form_access: collection.sharing.form.access,
+    form_share_token: collection.sharing.form.token,
     updated_at: collection.updatedAt,
   };
 }
@@ -332,7 +345,7 @@ export async function deleteCollection(userId: string, collectionId: string): Pr
 export async function setCollectionShareAccess(
   userId: string,
   collectionId: string,
-  target: 'collection' | 'docs',
+  target: 'collection' | 'docs' | 'form',
   access: VisibilityMode,
 ): Promise<Collection | null> {
   const collection = await getCollection(userId, collectionId);
@@ -590,6 +603,7 @@ function toPublicCollection(collection: Collection): PublicCollectionResponse {
     sharing: {
       collection: { access: collection.sharing.collection.access },
       docs: { access: collection.sharing.docs.access },
+      form: { access: collection.sharing.form.access },
     },
     createdAt: collection.createdAt,
     updatedAt: collection.updatedAt,
@@ -616,6 +630,19 @@ export async function getPublicDocsByToken(token: string): Promise<PublicCollect
     .select('*')
     .eq('docs_share_token', token)
     .eq('docs_access', 'public')
+    .maybeSingle();
+
+  if (error) throw error;
+  return data ? toPublicCollection(mapCollectionRow(data as CollectionRow)) : null;
+}
+
+export async function getPublicFormByToken(token: string): Promise<PublicCollectionResponse | null> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from('apix_collections')
+    .select('*')
+    .eq('form_share_token', token)
+    .eq('form_access', 'public')
     .maybeSingle();
 
   if (error) throw error;

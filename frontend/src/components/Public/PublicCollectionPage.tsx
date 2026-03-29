@@ -197,7 +197,7 @@ async function readFilesAsDataValue(files: FileList | null, multiple: boolean): 
   return JSON.stringify(values);
 }
 
-export default function PublicCollectionPage() {
+export default function PublicCollectionPage({ shareMode = 'collection' }: { shareMode?: 'collection' | 'form' }) {
   const { token } = useParams();
   const [collection, setCollection] = useState<PublicCollectionResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -285,7 +285,8 @@ export default function PublicCollectionPage() {
   useEffect(() => {
     const load = async () => {
       try {
-        const { data } = await apiClient.get<PublicCollectionResponse>(`/public/collections/${token}`);
+        const endpoint = shareMode === 'form' ? 'forms' : 'collections';
+        const { data } = await apiClient.get<PublicCollectionResponse>(`/public/${endpoint}/${token}`);
         setCollection(data);
         setFormValuesByRequest(() => {
           const next: Record<string, Record<string, string>> = {};
@@ -297,14 +298,14 @@ export default function PublicCollectionPage() {
           return next;
         });
       } catch (requestError) {
-        setError(requestError instanceof Error ? requestError.message : 'Failed to load shared collection');
+        setError(requestError instanceof Error ? requestError.message : shareMode === 'form' ? 'Failed to load shared form' : 'Failed to load shared collection');
       } finally {
         setLoading(false);
       }
     };
 
     load();
-  }, [token]);
+  }, [token, shareMode]);
 
   const updateFormValue = (requestId: string, fieldName: string, value: string) => {
     setFormValuesByRequest((previous) => ({
@@ -510,12 +511,16 @@ export default function PublicCollectionPage() {
   };
 
   if (loading) {
-    return <div className="min-h-screen bg-app-bg text-app-text flex items-center justify-center">Loading shared collection...</div>;
+    return <div className="min-h-screen bg-app-bg text-app-text flex items-center justify-center">{shareMode === 'form' ? 'Loading shared form...' : 'Loading shared collection...'}</div>;
   }
 
   if (error || !collection) {
-    return <div className="min-h-screen bg-app-bg text-app-text flex items-center justify-center">{error || 'Collection not found'}</div>;
+    return <div className="min-h-screen bg-app-bg text-app-text flex items-center justify-center">{error || (shareMode === 'form' ? 'Form not found' : 'Collection not found')}</div>;
   }
+
+  const visibleRequests = shareMode === 'form'
+    ? collection.requests.filter((request) => request.formConfig?.enabled)
+    : collection.requests;
 
   return (
     <div className="min-h-screen bg-app-bg text-app-text">
@@ -528,7 +533,7 @@ export default function PublicCollectionPage() {
         <div className="panel p-4 sm:p-6">
           <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
             <div>
-              <p className="text-xs uppercase tracking-[0.3em] text-app-muted">Shared Collection</p>
+              <p className="text-xs uppercase tracking-[0.3em] text-app-muted">{shareMode === 'form' ? 'Shared Form' : 'Shared Collection'}</p>
               <h1 className="text-2xl sm:text-3xl font-semibold mt-2 break-words">{collection.name}</h1>
               {collection.description && (
                 <div className="mt-3 max-w-3xl">
@@ -537,24 +542,26 @@ export default function PublicCollectionPage() {
               )}
             </div>
             <div className="text-left sm:text-right text-xs text-app-muted">
-              <div>{collection.requests.length} requests</div>
-              <div className="mt-1">Try requests without login</div>
+              <div>{visibleRequests.length} requests</div>
+              <div className="mt-1">{shareMode === 'form' ? 'Fill and submit form without login' : 'Try requests without login'}</div>
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-2 mt-5">
-            <button onClick={hideAllRequests} className="btn-ghost text-xs inline-flex items-center gap-1.5">
-              <EyeOff size={13} />
-              Hide all requests
-            </button>
-            <button onClick={unhideAllRequests} className="btn-ghost text-xs inline-flex items-center gap-1.5">
-              <Eye size={13} />
-              Unhide all requests
-            </button>
-          </div>
+          {shareMode !== 'form' && (
+            <div className="flex flex-wrap items-center gap-2 mt-5">
+              <button onClick={hideAllRequests} className="btn-ghost text-xs inline-flex items-center gap-1.5">
+                <EyeOff size={13} />
+                Hide all requests
+              </button>
+              <button onClick={unhideAllRequests} className="btn-ghost text-xs inline-flex items-center gap-1.5">
+                <Eye size={13} />
+                Unhide all requests
+              </button>
+            </div>
+          )}
         </div>
 
         <div className="space-y-4">
-          {collection.requests.map((request) => {
+          {visibleRequests.map((request) => {
             const effectiveRequest = requestDrafts[request.id] || request;
             const response = responses[request.id];
             const hidden = hiddenRequests.has(request.id);
@@ -573,19 +580,23 @@ export default function PublicCollectionPage() {
                     </div>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
-                    <button
-                      onClick={() => toggleRequestEdit(request)}
-                      className="btn-ghost text-xs"
-                    >
-                      {editing ? 'Done edit' : 'Edit request'}
-                    </button>
-                    <button
-                      onClick={() => toggleRequestVisibility(request.id)}
-                      className="btn-ghost text-xs inline-flex items-center gap-1.5"
-                    >
-                      {hidden ? <Eye size={13} /> : <EyeOff size={13} />}
-                      {hidden ? 'Unhide' : 'Hide'}
-                    </button>
+                    {shareMode !== 'form' && (
+                      <>
+                        <button
+                          onClick={() => toggleRequestEdit(request)}
+                          className="btn-ghost text-xs"
+                        >
+                          {editing ? 'Done edit' : 'Edit request'}
+                        </button>
+                        <button
+                          onClick={() => toggleRequestVisibility(request.id)}
+                          className="btn-ghost text-xs inline-flex items-center gap-1.5"
+                        >
+                          {hidden ? <Eye size={13} /> : <EyeOff size={13} />}
+                          {hidden ? 'Unhide' : 'Hide'}
+                        </button>
+                      </>
+                    )}
                     <button onClick={() => sendRequest(effectiveRequest)} className="btn-primary text-xs py-1.5 min-w-24 justify-center inline-flex items-center gap-1.5">
                       {activeRequestId === request.id ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />}
                       {activeRequestId === request.id ? 'Sending' : 'Try request'}
@@ -595,7 +606,7 @@ export default function PublicCollectionPage() {
 
                 {!hidden ? (
                   <div className="p-4 sm:p-5 space-y-4">
-                  {editing && (
+                  {shareMode !== 'form' && editing && (
                     <div className="border border-app-border rounded-lg overflow-hidden bg-app-bg/40">
                       <div className="px-3 py-2 border-b border-app-border bg-app-sidebar flex flex-col sm:flex-row sm:items-center gap-2">
                         <select
@@ -918,7 +929,7 @@ export default function PublicCollectionPage() {
                           const sharedInputClass = 'input-field mt-1 text-xs';
 
                           return (
-                            <label key={field.id} className="text-xs text-app-muted block">
+                            <label key={field.id} className={`text-xs text-app-muted block ${field.layoutWidth === 'full' ? 'md:col-span-2' : ''}`}>
                               <span className="inline-flex items-center gap-1">
                                 {field.label}
                                 {field.required && <span className="text-red-300">*</span>}

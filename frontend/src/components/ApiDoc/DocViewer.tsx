@@ -1,9 +1,11 @@
+import { useState } from 'react';
 import { useAppStore } from '../../store';
-import { Collection, ApiRequest, HttpMethod } from '../../types';
+import { Collection, ApiRequest, HttpMethod, RequestFormField } from '../../types';
 import { X, Book, Copy, Share2, Globe2, Lock, Trash2 } from 'lucide-react';
 import { METHOD_BG_COLORS } from '../../utils/format';
 import CodeSnippetViewer from '../Common/CodeSnippetViewer';
 import toast from 'react-hot-toast';
+import { isFieldVisible } from '../../lib/requestForm';
 
 interface DocViewerProps {
   collectionId: string;
@@ -47,10 +49,16 @@ export default function DocViewer({ collectionId }: DocViewerProps) {
           </div>
           <div className="flex items-center gap-2">
             {storageMode === 'remote' && (
-              <button onClick={() => openShareModal(collection.id, 'docs')} className="btn-ghost text-xs inline-flex items-center gap-1.5">
-                <Share2 size={13} />
-                Share Docs
-              </button>
+              <>
+                <button onClick={() => openShareModal(collection.id, 'docs')} className="btn-ghost text-xs inline-flex items-center gap-1.5">
+                  <Share2 size={13} />
+                  Share Docs
+                </button>
+                <button onClick={() => openShareModal(collection.id, 'form')} className="btn-ghost text-xs inline-flex items-center gap-1.5">
+                  <Share2 size={13} />
+                  Share Form
+                </button>
+              </>
             )}
             <button onClick={exportDocs} className="btn-primary text-xs py-1">
               Export Markdown
@@ -100,10 +108,21 @@ function RequestDoc({
   collectionId: string;
   onDeleteExample: (collectionId: string, requestId: string, index: number) => Promise<void>;
 }) {
+  const [formValues, setFormValues] = useState<Record<string, string>>(() => getInitialFormValues(request));
+
   const copyUrl = async () => {
     await navigator.clipboard.writeText(request.url);
     toast.success('URL copied');
   };
+
+  const updateFormValue = (fieldName: string, value: string) => {
+    setFormValues((previous) => ({
+      ...previous,
+      [fieldName]: value,
+    }));
+  };
+
+  const groupedFields = groupVisibleFields(request.formConfig?.fields || [], formValues);
 
   return (
     <div className="border border-app-border rounded-lg overflow-hidden">
@@ -154,30 +173,35 @@ function RequestDoc({
         )}
 
         {request.formConfig?.enabled && (
-          <DocSection title="Interactive Form Mapping">
-            <DocTable
-              headers={['Field', 'Type', 'Map To', 'Rules']}
-              rows={(request.formConfig.fields || []).map((field) => [
-                field.label,
-                <code key={`${field.id}-type`} className="text-app-muted">{field.type}</code>,
-                <code key={`${field.id}-map`} className="text-blue-300">{field.target}{' -> '}{field.targetKey}</code>,
-                [
-                  field.required ? 'required' : 'optional',
-                  field.min !== undefined ? `min:${field.min}` : '',
-                  field.max !== undefined ? `max:${field.max}` : '',
-                  field.pattern ? 'pattern' : '',
-                  field.type === 'select' || field.type === 'radio' ? `options:${(field.options || []).length}` : '',
-                  field.repeatable ? `array:${field.repeatSeparator || 'newline'}` : '',
-                  field.group ? `group:${field.group}` : '',
-                  field.visibilityDependsOnFieldName ? `visible-if:${field.visibilityDependsOnFieldName}` : '',
-                ].filter(Boolean).join(', '),
-              ])}
-            />
+          <DocSection title="Interactive Form">
+            <div className="border border-app-border rounded p-3 space-y-3 bg-app-active/20">
+              <p className="text-xs text-app-muted">User input preview from this form builder config.</p>
+              {Object.entries(groupedFields).map(([groupName, fields]) => (
+                <div key={`${request.id}-${groupName}`} className="space-y-2">
+                  <p className="text-[11px] uppercase tracking-wider text-app-muted">{groupName}</p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                    {fields.map((field) => (
+                      <FormInputField
+                        key={field.id}
+                        field={field}
+                        value={formValues[field.name] || ''}
+                        onChange={(value) => updateFormValue(field.name, value)}
+                      />
+                    ))}
+                  </div>
+                </div>
+              ))}
+
+              {Object.keys(groupedFields).length === 0 && (
+                <p className="text-xs text-app-muted">No visible fields with current values.</p>
+              )}
+
             {request.formConfig.authRequirement?.enabled && (
               <p className="text-xs text-app-muted mt-2">
                 Auth dependency: request must collect token from another request response before this endpoint is sent.
               </p>
             )}
+            </div>
           </DocSection>
         )}
 
@@ -333,4 +357,151 @@ function generateMarkdown(collection: Collection): string {
   });
 
   return lines.join('\n');
+}
+
+function getInitialFormValues(request: ApiRequest): Record<string, string> {
+  const values: Record<string, string> = {};
+  (request.formConfig?.fields || []).forEach((field) => {
+    values[field.name] = field.defaultValue || '';
+  });
+  return values;
+}
+
+function groupVisibleFields(fields: RequestFormField[], values: Record<string, string>): Record<string, RequestFormField[]> {
+  return fields.reduce<Record<string, RequestFormField[]>>((acc, field) => {
+    if (!isFieldVisible(field, values)) {
+      return acc;
+    }
+
+    const group = (field.group || 'General').trim() || 'General';
+    if (!acc[group]) {
+      acc[group] = [];
+    }
+    acc[group].push(field);
+    return acc;
+  }, {});
+}
+
+function FormInputField({
+  field,
+  value,
+  onChange,
+}: {
+  field: RequestFormField;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const inputClass = 'input-field mt-1 text-xs';
+
+  return (
+    <label className={`text-xs text-app-muted block ${field.layoutWidth === 'full' ? 'md:col-span-2' : ''}`}>
+      <span className="inline-flex items-center gap-1">
+        {field.label}
+        {field.required && <span className="text-red-300">*</span>}
+      </span>
+
+      {field.type === 'textarea' || field.repeatable || field.type === 'json' || field.type === 'address' ? (
+        <textarea
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          className={`${inputClass} min-h-20`}
+          placeholder={field.placeholder || ''}
+        />
+      ) : field.type === 'select' ? (
+        <select value={value} onChange={(event) => onChange(event.target.value)} className={`${inputClass} bg-app-panel`}>
+          <option value="">Select...</option>
+          {(field.options || []).map((option) => (
+            <option key={option.id} value={option.value}>{option.label || option.value}</option>
+          ))}
+        </select>
+      ) : field.type === 'radio' ? (
+        <div className="mt-1 flex flex-wrap gap-2">
+          {(field.options || []).map((option) => (
+            <label key={option.id} className="inline-flex items-center gap-1">
+              <input
+                type="radio"
+                name={`doc_form_${field.id}`}
+                value={option.value}
+                checked={value === option.value}
+                onChange={(event) => onChange(event.target.value)}
+                className="w-3.5 h-3.5 accent-orange-500"
+              />
+              <span>{option.label || option.value}</span>
+            </label>
+          ))}
+        </div>
+      ) : field.type === 'checkbox' ? (
+        <input
+          type="checkbox"
+          checked={value === 'true'}
+          onChange={(event) => onChange(event.target.checked ? 'true' : 'false')}
+          className="mt-2 w-4 h-4 accent-orange-500"
+        />
+      ) : field.type === 'file' ? (
+        <input
+          type="file"
+          multiple={Boolean(field.multiple)}
+          accept={field.accept || undefined}
+          onChange={(event) => {
+            const files = event.target.files;
+            if (!files || files.length === 0) {
+              onChange('');
+              return;
+            }
+            const fileNames = Array.from(files).map((file) => file.name).join(', ');
+            onChange(fileNames);
+          }}
+          className="mt-1 text-xs text-app-muted"
+        />
+      ) : field.type === 'range' ? (
+        <div className="mt-1 space-y-1">
+          <input
+            type="range"
+            value={value || String(field.min ?? 0)}
+            min={field.min}
+            max={field.max}
+            step={field.step}
+            onChange={(event) => onChange(event.target.value)}
+            className="w-full accent-orange-500"
+          />
+          <p className="text-[11px] text-app-muted">Value: {value || String(field.min ?? 0)}</p>
+        </div>
+      ) : (
+        <input
+          type={
+            field.type === 'password'
+              ? 'password'
+              : field.type === 'number'
+                ? 'number'
+                : field.type === 'email'
+                  ? 'email'
+                  : field.type === 'tel'
+                    ? 'tel'
+                    : field.type === 'url'
+                      ? 'url'
+                      : field.type === 'date'
+                        ? 'date'
+                        : field.type === 'time'
+                          ? 'time'
+                          : field.type === 'datetime-local'
+                            ? 'datetime-local'
+                            : field.type === 'color'
+                              ? 'color'
+                              : 'text'
+          }
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder={field.placeholder || ''}
+          min={field.min}
+          max={field.max}
+          step={field.step}
+          pattern={field.pattern || undefined}
+          className={inputClass}
+        />
+      )}
+
+      <span className="block mt-1 text-[11px] text-app-muted font-mono">map: {field.target}{' -> '}{field.targetKey}</span>
+      {field.description && <span className="block mt-1 text-[11px] text-app-muted">{field.description}</span>}
+    </label>
+  );
 }

@@ -624,6 +624,7 @@ function buildImportedCollection(data: unknown, format: ImportFormat, userId: st
     sharing: {
       collection: { access: 'private', token: null },
       docs: { access: 'private', token: null },
+      form: { access: 'private', token: null },
     },
     ownerUserId: userId,
     storageScope: 'remote',
@@ -653,6 +654,7 @@ router.post('/', async (req: Request, res: Response) => {
     sharing: {
       collection: { access: 'private', token: null },
       docs: { access: 'private', token: null },
+      form: { access: 'private', token: null },
     },
     ownerUserId: userId,
     storageScope: 'remote',
@@ -784,10 +786,10 @@ router.delete('/:collectionId/requests/:requestId', async (req: Request, res: Re
 // POST share collection or docs
 router.post('/:id/share', async (req: Request, res: Response) => {
   const userId = requireUserId(req);
-  const target = req.body.target as 'collection' | 'docs';
+  const target = req.body.target as 'collection' | 'docs' | 'form';
   const access = req.body.access as VisibilityMode;
 
-  if (!['collection', 'docs'].includes(target)) {
+  if (!['collection', 'docs', 'form'].includes(target)) {
     return res.status(400).json({ error: 'Invalid share target' });
   }
 

@@ -68,6 +68,7 @@ export interface RequestFormField {
   name: string;
   label: string;
   type: RequestFormFieldType;
+  layoutWidth?: 'half' | 'full';
   required?: boolean;
   target: RequestFormFieldTarget;
   targetKey: string;
@@ -189,6 +190,7 @@ export interface ShareSettings {
 export interface CollectionSharing {
   collection: ShareSettings;
   docs: ShareSettings;
+  form: ShareSettings;
 }
 
 export interface ApiRequest {
@@ -318,6 +320,7 @@ export interface PublicCollectionResponse {
   sharing: {
     collection: { access: VisibilityMode };
     docs: { access: VisibilityMode };
+    form: { access: VisibilityMode };
   };
   createdAt: string;
   updatedAt: string;

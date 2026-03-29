@@ -42,7 +42,7 @@ export default function ShareModal() {
     (collection.currentUserRole === 'owner' ||
       (Boolean(userId) && Boolean(collection.ownerUserId) && collection.ownerUserId === userId));
   const currentAccessLabel = collection.currentUserRole || (canManageMembers ? 'owner' : null);
-  const sharePath = shareModalTarget === 'docs' ? 'docs' : 'collections';
+  const sharePath = shareModalTarget === 'docs' ? 'docs' : shareModalTarget === 'form' ? 'forms' : 'collections';
   const shareUrl = share.token ? `${getAppBaseUrl()}/share/${sharePath}/${share.token}` : '';
   const displayMembers: DisplayMember[] = [
     ...(collection.ownerUserId
@@ -148,7 +148,7 @@ export default function ShareModal() {
         <div className="flex items-center justify-between px-5 py-4 border-b border-app-border bg-app-sidebar">
           <div>
             <h3 className="text-sm font-semibold text-app-text">
-              {shareModalTarget === 'docs' ? 'Share API Documentation' : 'Share Collection'}
+              {shareModalTarget === 'docs' ? 'Share API Documentation' : shareModalTarget === 'form' ? 'Share Public Form' : 'Share Collection'}
             </h3>
             <p className="text-xs text-app-muted mt-1">{collection.name}</p>
           </div>

@@ -39,6 +39,7 @@ function defaultSharing() {
   return {
     collection: { access: 'private' as const, token: null },
     docs: { access: 'private' as const, token: null },
+    form: { access: 'private' as const, token: null },
   };
 }
 
@@ -172,7 +173,7 @@ interface AppState {
   userId: string | null;
   showShareModal: boolean;
   shareModalCollectionId: string | null;
-  shareModalTarget: 'collection' | 'docs';
+  shareModalTarget: 'collection' | 'docs' | 'form';
   requestHistory: RequestHistoryEntry[];
   pendingCloseTabId: string | null;
 
@@ -188,11 +189,11 @@ interface AppState {
   updateRequestInCollection: (collectionId: string, request: ApiRequest) => Promise<'remote' | 'local'>;
   deleteRequestFromCollection: (collectionId: string, requestId: string) => Promise<void>;
   importCollection: (data: unknown, format: ImportSourceFormat | 'apix') => Promise<void>;
-  updateCollectionShareAccess: (collectionId: string, target: 'collection' | 'docs', access: VisibilityMode) => Promise<Collection>;
+  updateCollectionShareAccess: (collectionId: string, target: 'collection' | 'docs' | 'form', access: VisibilityMode) => Promise<Collection>;
   loadCollectionMembers: (collectionId: string) => Promise<CollectionMember[]>;
   upsertCollectionMember: (collectionId: string, userId: string, role: CollectionMemberRole) => Promise<CollectionMember[]>;
   removeCollectionMember: (collectionId: string, userId: string) => Promise<CollectionMember[]>;
-  openShareModal: (collectionId: string, target: 'collection' | 'docs') => void;
+  openShareModal: (collectionId: string, target: 'collection' | 'docs' | 'form') => void;
   setShowShareModal: (show: boolean) => void;
 
   loadEnvironments: () => Promise<void>;
