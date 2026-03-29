@@ -153,6 +153,34 @@ function RequestDoc({
           </DocSection>
         )}
 
+        {request.formConfig?.enabled && (
+          <DocSection title="Interactive Form Mapping">
+            <DocTable
+              headers={['Field', 'Type', 'Map To', 'Rules']}
+              rows={(request.formConfig.fields || []).map((field) => [
+                field.label,
+                <code key={`${field.id}-type`} className="text-app-muted">{field.type}</code>,
+                <code key={`${field.id}-map`} className="text-blue-300">{field.target} -> {field.targetKey}</code>,
+                [
+                  field.required ? 'required' : 'optional',
+                  field.min !== undefined ? `min:${field.min}` : '',
+                  field.max !== undefined ? `max:${field.max}` : '',
+                  field.pattern ? 'pattern' : '',
+                  field.type === 'select' || field.type === 'radio' ? `options:${(field.options || []).length}` : '',
+                  field.repeatable ? `array:${field.repeatSeparator || 'newline'}` : '',
+                  field.group ? `group:${field.group}` : '',
+                  field.visibilityDependsOnFieldName ? `visible-if:${field.visibilityDependsOnFieldName}` : '',
+                ].filter(Boolean).join(', '),
+              ])}
+            />
+            {request.formConfig.authRequirement?.enabled && (
+              <p className="text-xs text-app-muted mt-2">
+                Auth dependency: request must collect token from another request response before this endpoint is sent.
+              </p>
+            )}
+          </DocSection>
+        )}
+
         {request.auth.type !== 'none' && (
           <DocSection title="Authentication">
             <p className="text-sm text-app-muted">

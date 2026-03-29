@@ -8,6 +8,13 @@ import { sendRequestWithSmartTransport } from '../../lib/requestTransport';
 import { ApiRequest, KeyValuePair, ProxyResponse, PublicCollectionResponse } from '../../types';
 import { METHOD_BG_COLORS } from '../../utils/format';
 import PublicResponseViewer from './PublicResponseViewer';
+import {
+  applyFormToRequest,
+  applyResponseMappings,
+  getInitialFormValues,
+  isFieldVisible,
+  runFormScript,
+} from '../../lib/requestForm';
 
 const METHODS: ApiRequest['method'][] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'];
 type EditTab = 'params' | 'headers' | 'body' | 'auth' | 'docs';
@@ -90,6 +97,30 @@ function buildProxyPayload(request: ApiRequest, collection: PublicCollectionResp
     url += (url.includes('?') ? '&' : '?') + queryString;
   }
 
+  if (request.auth.type === 'bearer' && request.auth.token) {
+    headers.Authorization = `Bearer ${resolveText(request.auth.token)}`;
+  } else if (request.auth.type === 'basic' && request.auth.username) {
+    headers.Authorization = `Basic ${btoa(`${request.auth.username}:${request.auth.password || ''}`)}`;
+  } else if (request.auth.type === 'api-key' && request.auth.key) {
+    const key = resolveText(request.auth.key);
+    const value = resolveText(request.auth.value || '');
+    if (request.auth.addTo === 'query') {
+      try {
+        const parsedUrl = new URL(url);
+        parsedUrl.searchParams.set(key, value);
+        url = parsedUrl.toString();
+      } catch {
+        const params = new URLSearchParams(url.includes('?') ? url.split('?')[1] : '');
+        params.set(key, value);
+        const base = url.split('?')[0];
+        const nextQuery = params.toString();
+        url = nextQuery ? `${base}?${nextQuery}` : base;
+      }
+    } else {
+      headers[key] = value;
+    }
+  }
+
   let body: string | null = null;
   if (!['GET', 'HEAD', 'OPTIONS'].includes(request.method)) {
     if (request.body.type === 'json') {
@@ -107,6 +138,65 @@ function buildProxyPayload(request: ApiRequest, collection: PublicCollectionResp
   return { url, headers, body };
 }
 
+function parseAddressFormValue(raw: string): {
+  street: string;
+  city: string;
+  state: string;
+  postalCode: string;
+  country: string;
+} {
+  const fallback = {
+    street: '',
+    city: '',
+    state: '',
+    postalCode: '',
+    country: '',
+  };
+
+  if (!raw.trim()) {
+    return fallback;
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return fallback;
+    }
+
+    const data = parsed as Record<string, unknown>;
+    return {
+      street: String(data.street || ''),
+      city: String(data.city || ''),
+      state: String(data.state || ''),
+      postalCode: String(data.postalCode || ''),
+      country: String(data.country || ''),
+    };
+  } catch {
+    return fallback;
+  }
+}
+
+async function readFilesAsDataValue(files: FileList | null, multiple: boolean): Promise<string> {
+  if (!files || files.length === 0) {
+    return '';
+  }
+
+  const readFile = (file: File) =>
+    new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ''));
+      reader.onerror = () => reject(new Error('Failed to read file'));
+      reader.readAsDataURL(file);
+    });
+
+  if (!multiple) {
+    return readFile(files[0]);
+  }
+
+  const values = await Promise.all(Array.from(files).map(readFile));
+  return JSON.stringify(values);
+}
+
 export default function PublicCollectionPage() {
   const { token } = useParams();
   const [collection, setCollection] = useState<PublicCollectionResponse | null>(null);
@@ -118,6 +208,7 @@ export default function PublicCollectionPage() {
   const [editingRequests, setEditingRequests] = useState<Set<string>>(new Set());
   const [requestDrafts, setRequestDrafts] = useState<Record<string, ApiRequest>>({});
   const [activeEditTab, setActiveEditTab] = useState<Record<string, EditTab>>({});
+  const [formValuesByRequest, setFormValuesByRequest] = useState<Record<string, Record<string, string>>>({});
 
   useEffect(() => {
     const html = document.documentElement;
@@ -196,6 +287,15 @@ export default function PublicCollectionPage() {
       try {
         const { data } = await apiClient.get<PublicCollectionResponse>(`/public/collections/${token}`);
         setCollection(data);
+        setFormValuesByRequest(() => {
+          const next: Record<string, Record<string, string>> = {};
+          data.requests.forEach((request) => {
+            if (request.formConfig?.enabled) {
+              next[request.id] = getInitialFormValues(request);
+            }
+          });
+          return next;
+        });
       } catch (requestError) {
         setError(requestError instanceof Error ? requestError.message : 'Failed to load shared collection');
       } finally {
@@ -206,6 +306,28 @@ export default function PublicCollectionPage() {
     load();
   }, [token]);
 
+  const updateFormValue = (requestId: string, fieldName: string, value: string) => {
+    setFormValuesByRequest((previous) => ({
+      ...previous,
+      [requestId]: {
+        ...(previous[requestId] || {}),
+        [fieldName]: value,
+      },
+    }));
+  };
+
+  const toStringRecord = (value: unknown, fallback: Record<string, string>): Record<string, string> => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return fallback;
+    }
+
+    const next: Record<string, string> = {};
+    Object.entries(value as Record<string, unknown>).forEach(([key, item]) => {
+      next[key] = item === null || item === undefined ? '' : String(item);
+    });
+    return next;
+  };
+
   const sendRequest = async (request: ApiRequest) => {
     if (!collection) {
       return;
@@ -213,14 +335,67 @@ export default function PublicCollectionPage() {
 
     setActiveRequestId(request.id);
     try {
-      const payload = buildProxyPayload(request, collection);
+      let requestToSend = request;
+
+      if (request.formConfig?.enabled) {
+        const currentValues = formValuesByRequest[request.id] || getInitialFormValues(request);
+        const mappedValues = applyResponseMappings(currentValues, request.formConfig, responses);
+        const scriptedValues = runFormScript<Record<string, string>>(
+          request.formConfig.scripts?.beforeSubmit,
+          {
+            values: { ...mappedValues },
+            request,
+            responses,
+          },
+          mappedValues,
+        );
+        const mergedValues = toStringRecord(scriptedValues, mappedValues);
+        setFormValuesByRequest((previous) => ({
+          ...previous,
+          [request.id]: mergedValues,
+        }));
+
+        const applied = applyFormToRequest(request, mergedValues, responses);
+        if (applied.error) {
+          setResponses((previous) => ({
+            ...previous,
+            [request.id]: {
+              status: 0,
+              statusText: 'Form Validation Error',
+              headers: {},
+              body: applied.error,
+              size: applied.error.length,
+              time: 0,
+              error: 'FORM_INVALID',
+            },
+          }));
+          return;
+        }
+
+        requestToSend = applied.request;
+      }
+
+      const payload = buildProxyPayload(requestToSend, collection);
       const data = await sendRequestWithSmartTransport({
-        method: request.method,
+        method: requestToSend.method,
         url: payload.url,
         headers: payload.headers,
         body: payload.body,
         timeout: 30000,
       });
+
+      if (request.formConfig?.enabled) {
+        runFormScript(
+          request.formConfig.scripts?.afterResponse,
+          {
+            response: data,
+            request: requestToSend,
+            values: formValuesByRequest[request.id] || {},
+          },
+          null,
+        );
+      }
+
       setResponses((previous) => ({ ...previous, [request.id]: data }));
     } catch (requestError) {
       setResponses((previous) => ({
@@ -708,6 +883,230 @@ export default function PublicCollectionPage() {
                       </div>
                     </div>
                   )}
+
+                  {effectiveRequest.formConfig?.enabled && (
+                    <div className="border border-app-border rounded-lg p-3 space-y-3 bg-app-bg/30">
+                      <div>
+                        <p className="text-xs uppercase tracking-wider text-app-muted">Interactive Form</p>
+                        <p className="text-xs text-app-muted mt-1">
+                          This request is configured with auto-generated/custom fields, response mapping, and optional auth dependency.
+                        </p>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                        {Object.entries(
+                          (effectiveRequest.formConfig.fields || []).reduce<Record<string, typeof effectiveRequest.formConfig.fields>>((acc, field) => {
+                            const currentValues = formValuesByRequest[effectiveRequest.id] || {};
+                            if (!isFieldVisible(field, currentValues)) {
+                              return acc;
+                            }
+
+                            const group = (field.group || 'General').trim() || 'General';
+                            if (!acc[group]) {
+                              acc[group] = [];
+                            }
+                            acc[group].push(field);
+                            return acc;
+                          }, {}),
+                        ).map(([groupName, groupedFields]) => (
+                          <div key={`${effectiveRequest.id}-${groupName}`} className="md:col-span-2 border border-app-border rounded p-2 space-y-2">
+                            <p className="text-[11px] uppercase tracking-wider text-app-muted">{groupName}</p>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                              {groupedFields.map((field) => {
+                          const fieldValue = formValuesByRequest[effectiveRequest.id]?.[field.name] ?? field.defaultValue ?? '';
+                          const sharedInputClass = 'input-field mt-1 text-xs';
+
+                          return (
+                            <label key={field.id} className="text-xs text-app-muted block">
+                              <span className="inline-flex items-center gap-1">
+                                {field.label}
+                                {field.required && <span className="text-red-300">*</span>}
+                              </span>
+                              {field.type === 'textarea' ? (
+                                <textarea
+                                  value={fieldValue}
+                                  onChange={(event) => updateFormValue(effectiveRequest.id, field.name, event.target.value)}
+                                  placeholder={field.placeholder || ''}
+                                  className={`${sharedInputClass} min-h-20`}
+                                />
+                              ) : field.repeatable ? (
+                                <textarea
+                                  value={fieldValue}
+                                  onChange={(event) => updateFormValue(effectiveRequest.id, field.name, event.target.value)}
+                                  placeholder={
+                                    field.repeatSeparator === 'comma'
+                                      ? 'value1,value2,value3'
+                                      : field.repeatSeparator === 'json-lines'
+                                        ? '{"id":1}\n{"id":2}'
+                                        : 'one item per line'
+                                  }
+                                  className={`${sharedInputClass} min-h-20 font-mono`}
+                                />
+                              ) : field.type === 'json' ? (
+                                <textarea
+                                  value={fieldValue}
+                                  onChange={(event) => updateFormValue(effectiveRequest.id, field.name, event.target.value)}
+                                  placeholder='{"key":"value"}'
+                                  className={`${sharedInputClass} min-h-20 font-mono`}
+                                />
+                              ) : field.type === 'address' ? (
+                                <div className="mt-1 grid grid-cols-1 gap-1.5">
+                                  {(() => {
+                                    const address = parseAddressFormValue(fieldValue);
+                                    const setAddressValue = (key: keyof typeof address, value: string) => {
+                                      const next = { ...address, [key]: value };
+                                      updateFormValue(effectiveRequest.id, field.name, JSON.stringify(next));
+                                    };
+
+                                    return (
+                                      <>
+                                        <input
+                                          value={address.street}
+                                          onChange={(event) => setAddressValue('street', event.target.value)}
+                                          placeholder="Street"
+                                          className={sharedInputClass}
+                                        />
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                                          <input
+                                            value={address.city}
+                                            onChange={(event) => setAddressValue('city', event.target.value)}
+                                            placeholder="City"
+                                            className={sharedInputClass}
+                                          />
+                                          <input
+                                            value={address.state}
+                                            onChange={(event) => setAddressValue('state', event.target.value)}
+                                            placeholder="State"
+                                            className={sharedInputClass}
+                                          />
+                                        </div>
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                                          <input
+                                            value={address.postalCode}
+                                            onChange={(event) => setAddressValue('postalCode', event.target.value)}
+                                            placeholder="Postal code"
+                                            className={sharedInputClass}
+                                          />
+                                          <input
+                                            value={address.country}
+                                            onChange={(event) => setAddressValue('country', event.target.value)}
+                                            placeholder="Country"
+                                            className={sharedInputClass}
+                                          />
+                                        </div>
+                                      </>
+                                    );
+                                  })()}
+                                </div>
+                              ) : field.type === 'select' ? (
+                                <select
+                                  value={fieldValue}
+                                  onChange={(event) => updateFormValue(effectiveRequest.id, field.name, event.target.value)}
+                                  className={`${sharedInputClass} bg-app-panel`}
+                                >
+                                  <option value="">Select...</option>
+                                  {(field.options || []).map((option) => (
+                                    <option key={option.id} value={option.value}>{option.label || option.value}</option>
+                                  ))}
+                                </select>
+                              ) : field.type === 'radio' ? (
+                                <div className="mt-1 space-y-1.5">
+                                  {(field.options || []).map((option) => (
+                                    <label key={option.id} className="text-xs text-app-muted inline-flex items-center gap-2 mr-3">
+                                      <input
+                                        type="radio"
+                                        name={`${effectiveRequest.id}_${field.name}`}
+                                        value={option.value}
+                                        checked={fieldValue === option.value}
+                                        onChange={(event) => updateFormValue(effectiveRequest.id, field.name, event.target.value)}
+                                        className="w-3.5 h-3.5 accent-orange-500"
+                                      />
+                                      {option.label || option.value}
+                                    </label>
+                                  ))}
+                                </div>
+                              ) : field.type === 'checkbox' ? (
+                                <input
+                                  type="checkbox"
+                                  checked={fieldValue === 'true'}
+                                  onChange={(event) => updateFormValue(effectiveRequest.id, field.name, event.target.checked ? 'true' : 'false')}
+                                  className="mt-2 w-4 h-4 accent-orange-500"
+                                />
+                              ) : field.type === 'file' ? (
+                                <input
+                                  type="file"
+                                  multiple={Boolean(field.multiple)}
+                                  accept={field.accept || undefined}
+                                  onChange={async (event) => {
+                                    const encoded = await readFilesAsDataValue(event.target.files, Boolean(field.multiple));
+                                    updateFormValue(effectiveRequest.id, field.name, encoded);
+                                  }}
+                                  className="mt-1 text-xs text-app-muted"
+                                />
+                              ) : field.type === 'range' ? (
+                                <div className="mt-1 space-y-1">
+                                  <input
+                                    type="range"
+                                    value={fieldValue || String(field.min ?? 0)}
+                                    min={field.min}
+                                    max={field.max}
+                                    step={field.step}
+                                    onChange={(event) => updateFormValue(effectiveRequest.id, field.name, event.target.value)}
+                                    className="w-full accent-orange-500"
+                                  />
+                                  <div className="text-[11px] text-app-muted">Value: {fieldValue || String(field.min ?? 0)}</div>
+                                </div>
+                              ) : (
+                                <input
+                                  type={
+                                    field.type === 'password'
+                                      ? 'password'
+                                      : field.type === 'number'
+                                        ? 'number'
+                                        : field.type === 'email'
+                                          ? 'email'
+                                          : field.type === 'tel'
+                                            ? 'tel'
+                                            : field.type === 'url'
+                                              ? 'url'
+                                              : field.type === 'date'
+                                                ? 'date'
+                                                : field.type === 'time'
+                                                  ? 'time'
+                                                  : field.type === 'datetime-local'
+                                                    ? 'datetime-local'
+                                                    : field.type === 'color'
+                                                      ? 'color'
+                                                      : 'text'
+                                  }
+                                  value={fieldValue}
+                                  onChange={(event) => updateFormValue(effectiveRequest.id, field.name, event.target.value)}
+                                  placeholder={field.placeholder || ''}
+                                  min={field.min}
+                                  max={field.max}
+                                  step={field.step}
+                                  pattern={field.pattern || undefined}
+                                  className={sharedInputClass}
+                                />
+                              )}
+                              {field.description && <span className="block mt-1 text-[11px] text-app-muted">{field.description}</span>}
+                              <span className="block mt-1 text-[11px] text-app-muted font-mono">map: {field.target} -> {field.targetKey}</span>
+                            </label>
+                          );
+                              })}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      {effectiveRequest.formConfig.authRequirement?.enabled && (
+                        <div className="text-[11px] text-app-muted border border-app-border rounded px-2.5 py-2 bg-app-active/30">
+                          Requires auth from another request first.
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   {effectiveRequest.description && <MarkdownBlock content={effectiveRequest.description} />}
                   {response && (
                     <PublicResponseViewer response={response} />

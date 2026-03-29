@@ -720,6 +720,7 @@ router.post('/:collectionId/requests', async (req: Request, res: Response) => {
     retryPolicy: req.body.retryPolicy,
     mockExamples: Array.isArray(req.body.mockExamples) ? req.body.mockExamples : [],
     description: req.body.description || '',
+    formConfig: req.body.formConfig,
     createdAt: now,
     updatedAt: now,
   };

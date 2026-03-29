@@ -193,6 +193,32 @@ export default function PublicDocsPage() {
                     <CodeSnippetViewer content={request.body.content} contentType={request.body.type} />
                   </div>
                 )}
+
+                {request.formConfig?.enabled && (
+                  <div>
+                    <div className="text-xs uppercase tracking-wider text-app-muted mb-2">Interactive Form</div>
+                    <div className="rounded border border-app-border overflow-hidden">
+                      {(request.formConfig.fields || []).map((field) => (
+                        <div key={field.id} className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 px-4 py-2 text-sm border-t border-app-border first:border-t-0">
+                          <span className="text-blue-300 font-mono sm:min-w-32 break-all">{field.label}</span>
+                          <span className="text-app-muted font-mono break-all">{field.type} | {field.target} -> {field.targetKey}</span>
+                          {field.group && <span className="text-[11px] text-cyan-300">group:{field.group}</span>}
+                          {field.required && <span className="text-[11px] text-red-300">required</span>}
+                          {field.repeatable && <span className="text-[11px] text-amber-300">array:{field.repeatSeparator || 'newline'}</span>}
+                          {field.visibilityDependsOnFieldName && (
+                            <span className="text-[11px] text-app-muted">visible-if:{field.visibilityDependsOnFieldName}</span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                    {request.formConfig.authRequirement?.enabled && (
+                      <p className="mt-2 text-xs text-app-muted">
+                        Requires auth dependency from another request before sending.
+                      </p>
+                    )}
+                  </div>
+                )}
+
                 {(request.mockExamples || []).length > 0 && (
                   <div>
                     <div className="text-xs uppercase tracking-wider text-app-muted mb-2">Response Examples</div>

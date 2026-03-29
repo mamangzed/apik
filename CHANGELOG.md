@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.3.2] - 2026-03-30
+
+### Added
+- Advanced request form builder: richer field types, repeatable arrays, conditional visibility, and grouped sections
+- Quick form templates with import/export schema flow, overwrite confirmation, preview, and undo replace
+- Shared custom form templates stored in `request.formConfig.templates` and synced through backend on save
+
+### Changed
+- Form builder UX improvements for group ordering (drag and move controls) and clearer save guidance
+- Form schema normalization now includes template metadata for safer import/export
+
+### Fixed
+- Request creation endpoint now persists incoming `formConfig` payload consistently
+- Added one-time migration from legacy local template cache to request-level form config templates
+
+---
+
 ## [1.3.1] - 2026-03-29
 
 ### Added
@@ -88,7 +105,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-[Unreleased]: https://github.com/mamangzed/apik/compare/v1.3.1...HEAD
+[Unreleased]: https://github.com/mamangzed/apik/compare/v1.3.2...HEAD
+[1.3.2]: https://github.com/mamangzed/apik/releases/tag/v1.3.2
 [1.3.1]: https://github.com/mamangzed/apik/releases/tag/v1.3.1
 [1.2.0]: https://github.com/mamangzed/apik/releases/tag/v1.2.0
 [1.1.1]: https://github.com/mamangzed/apik/releases/tag/v1.1.1

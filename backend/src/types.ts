@@ -22,6 +22,103 @@ export interface AuthConfig {
   addTo?: 'header' | 'query';
 }
 
+export type RequestFormFieldType =
+  | 'text'
+  | 'password'
+  | 'number'
+  | 'textarea'
+  | 'select'
+  | 'checkbox'
+  | 'radio'
+  | 'email'
+  | 'tel'
+  | 'url'
+  | 'date'
+  | 'time'
+  | 'datetime-local'
+  | 'range'
+  | 'color'
+  | 'file'
+  | 'address'
+  | 'json';
+export type RequestFormFieldTarget =
+  | 'param'
+  | 'header'
+  | 'body-json'
+  | 'body-form'
+  | 'auth-token'
+  | 'auth-username'
+  | 'auth-password'
+  | 'auth-api-key-value';
+
+export interface RequestFormFieldOption {
+  id: string;
+  label: string;
+  value: string;
+}
+
+export interface RequestFormField {
+  id: string;
+  name: string;
+  label: string;
+  type: RequestFormFieldType;
+  required?: boolean;
+  target: RequestFormFieldTarget;
+  targetKey: string;
+  placeholder?: string;
+  defaultValue?: string;
+  description?: string;
+  options?: RequestFormFieldOption[];
+  min?: number;
+  max?: number;
+  step?: number;
+  pattern?: string;
+  accept?: string;
+  multiple?: boolean;
+  repeatable?: boolean;
+  repeatSeparator?: 'newline' | 'comma' | 'json-lines';
+  group?: string;
+  visibilityDependsOnFieldName?: string;
+  visibilityOperator?: 'equals' | 'not-equals' | 'contains' | 'filled' | 'not-filled';
+  visibilityValue?: string;
+}
+
+export interface RequestFormAuthRequirement {
+  enabled: boolean;
+  sourceRequestId?: string;
+  tokenPath?: string;
+  scheme?: 'Bearer' | 'Token' | 'Raw';
+  headerName?: string;
+}
+
+export interface RequestFormResponseMapping {
+  id: string;
+  sourceRequestId: string;
+  responsePath: string;
+  targetFieldId: string;
+}
+
+export interface RequestFormScripts {
+  beforeSubmit?: string;
+  afterResponse?: string;
+}
+
+export interface RequestFormTemplate {
+  id: string;
+  name: string;
+  fields: RequestFormField[];
+  createdAt: number;
+}
+
+export interface RequestFormConfig {
+  enabled: boolean;
+  fields: RequestFormField[];
+  authRequirement?: RequestFormAuthRequirement;
+  responseMappings?: RequestFormResponseMapping[];
+  scripts?: RequestFormScripts;
+  templates?: RequestFormTemplate[];
+}
+
 export interface RetryPolicy {
   retries: number;
   retryDelayMs: number;
@@ -102,6 +199,7 @@ export interface ApiRequest {
   retryPolicy?: RetryPolicy;
   mockExamples?: ProxyResponse[];
   description?: string;
+  formConfig?: RequestFormConfig;
   createdAt: string;
   updatedAt: string;
 }
