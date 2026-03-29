@@ -198,7 +198,7 @@ export default function InterceptPanel() {
   const [mappingModalMaximized, setMappingModalMaximized] = useState(false);
   const [showHostInPreview, setShowHostInPreview] = useState(true);
   const [showOnlyMatchedRequests, setShowOnlyMatchedRequests] = useState(false);
-  const [hideLowConfidenceEdges, setHideLowConfidenceEdges] = useState(true);
+  const [hideLowConfidenceEdges, setHideLowConfidenceEdges] = useState(false);
   const [hideStaticAssetsInFlow, setHideStaticAssetsInFlow] = useState(false);
   const [hideDuplicatePollingInFlow, setHideDuplicatePollingInFlow] = useState(false);
   const [showOnlyAuthFlow, setShowOnlyAuthFlow] = useState(false);
@@ -206,6 +206,7 @@ export default function InterceptPanel() {
   const [compactPreferenceSet, setCompactPreferenceSet] = useState(false);
   const [expandedFlowNodeIds, setExpandedFlowNodeIds] = useState<string[]>([]);
   const [expandedBodyPanelIds, setExpandedBodyPanelIds] = useState<string[]>([]);
+  const [hybridConnectorOffsets, setHybridConnectorOffsets] = useState<Record<number, number>>({});
   const [isNarrowScreen, setIsNarrowScreen] = useState(false);
   const [targetCollectionId, setTargetCollectionId] = useState<string | null>(null);
   const [targetPlacement, setTargetPlacement] = useState<'header' | 'param' | 'body'>('header');
@@ -216,6 +217,7 @@ export default function InterceptPanel() {
   const [requestJsonKey, setRequestJsonKey] = useState('');
   const [responseJsonKey, setResponseJsonKey] = useState('');
   const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const hybridRowFirstNodeRefs = useRef<Record<number, HTMLDivElement | null>>({});
 
   useEffect(() => {
     const handleFind = () => {
@@ -1159,7 +1161,7 @@ export default function InterceptPanel() {
 
         const envName = normalizeEnvKey(envKey || targetKey || mappingValue);
         const sourceScript = buildSourceScript(match, envName, mappingValue);
-        const pairChain = applyConfidenceFilterToChain(buildPairChainRequests(selectedMatchId));
+        const pairChain = buildPairChainRequests(selectedMatchId);
         if (pairChain.length === 0) {
           toast.error('No flow candidates found');
           return;
@@ -1738,23 +1740,6 @@ export default function InterceptPanel() {
     return validated;
   };
 
-  const applyConfidenceFilterToChain = (requests: InterceptedRequest[]) => {
-    if (!hideLowConfidenceEdges || requests.length < 2) {
-      return requests;
-    }
-
-    const filtered: InterceptedRequest[] = [requests[0]];
-    for (let i = 1; i < requests.length; i += 1) {
-      const previous = filtered[filtered.length - 1];
-      const current = requests[i];
-      const relation = getEdgeRelation(previous, current);
-      if (relation.confidence !== 'low' || current.id === selected?.id) {
-        filtered.push(current);
-      }
-    }
-    return filtered;
-  };
-
   const flowPreviewRequests = useMemo(() => {
     if (mappingMatches.length === 0) {
       return [] as InterceptedRequest[];
@@ -1796,7 +1781,7 @@ export default function InterceptPanel() {
         });
         result = deduped;
       }
-      return applyConfidenceFilterToChain(result);
+      return result;
     }
 
     let result = buildPairChainRequests(selectedMatchId);
@@ -1825,7 +1810,7 @@ export default function InterceptPanel() {
       result = deduped;
     }
 
-    return applyConfidenceFilterToChain(result);
+    return result;
   }, [
     hideLowConfidenceEdges,
     hideDuplicatePollingInFlow,
@@ -1839,9 +1824,9 @@ export default function InterceptPanel() {
     showOnlyMatchedRequests,
   ]);
 
-  const flowPreviewEdges = useMemo(() => {
+  const allFlowPreviewEdges = useMemo(() => {
     if (flowPreviewRequests.length < 2) {
-      return [] as Array<{ from: InterceptedRequest; to: InterceptedRequest; relation: string; confidence: 'high' | 'medium' | 'low'; score: number; }>;
+      return [] as Array<{ from: InterceptedRequest; to: InterceptedRequest; relation: string; kind: string; confidence: 'high' | 'medium' | 'low'; score: number; }>;
     }
     return flowPreviewRequests.slice(0, -1).map((request, index) => {
       const analysis = getEdgeRelation(request, flowPreviewRequests[index + 1]);
@@ -1849,15 +1834,39 @@ export default function InterceptPanel() {
         from: request,
         to: flowPreviewRequests[index + 1],
         relation: analysis.label,
+        kind: analysis.kind,
         confidence: analysis.confidence,
         score: analysis.score,
       };
     });
   }, [flowPreviewRequests]);
 
-  const autoFlowLayout = useMemo<'horizontal' | 'vertical'>(() => {
+  const flowPreviewEdges = useMemo(() => {
+    const edges = allFlowPreviewEdges;
+    if (!hideLowConfidenceEdges) {
+      return edges;
+    }
+    return edges.filter((edge) => edge.confidence !== 'low');
+  }, [allFlowPreviewEdges, hideLowConfidenceEdges]);
+
+  const autoFlowLayout = useMemo<'horizontal' | 'vertical' | 'hybrid'>(() => {
     if (flowPreviewRequests.length <= 1) {
       return 'horizontal';
+    }
+
+    if (allFlowPreviewEdges.length > 0) {
+      const allRequestToRequest = allFlowPreviewEdges.every((edge) => edge.kind === 'request-to-request');
+      if (allRequestToRequest) {
+        return 'horizontal';
+      }
+      const hasResponseToRequest = allFlowPreviewEdges.some((edge) => edge.kind === 'response-to-request');
+      const hasRequestToRequest = allFlowPreviewEdges.some((edge) => edge.kind === 'request-to-request');
+      if (hasResponseToRequest && hasRequestToRequest) {
+        return 'hybrid';
+      }
+      if (hasResponseToRequest) {
+        return 'vertical';
+      }
     }
 
     if (mappingMode === 'global') {
@@ -1882,7 +1891,70 @@ export default function InterceptPanel() {
     }
 
     return 'horizontal';
-  }, [flowPreviewRequests, mappingMode, selected, selectedSourceMatch]);
+  }, [allFlowPreviewEdges, flowPreviewRequests, mappingMode, selected, selectedSourceMatch]);
+
+  const flowPreviewRows = useMemo(() => {
+    if (flowPreviewRequests.length === 0) {
+      return [] as InterceptedRequest[][];
+    }
+    if (autoFlowLayout === 'horizontal') {
+      return [flowPreviewRequests];
+    }
+    if (autoFlowLayout === 'vertical') {
+      return flowPreviewRequests.map((request) => [request]);
+    }
+
+    const rows: InterceptedRequest[][] = [];
+    const edgeByPair = new Map<string, string>();
+    allFlowPreviewEdges.forEach((edge) => {
+      edgeByPair.set(`${edge.from.id}->${edge.to.id}`, edge.kind);
+    });
+
+    let currentRow: InterceptedRequest[] = [flowPreviewRequests[0]];
+    for (let i = 0; i < flowPreviewRequests.length - 1; i += 1) {
+      const current = flowPreviewRequests[i];
+      const next = flowPreviewRequests[i + 1];
+      const edgeKind = edgeByPair.get(`${current.id}->${next.id}`) || 'unclear';
+      if (edgeKind === 'request-to-request') {
+        currentRow.push(next);
+      } else {
+        rows.push(currentRow);
+        currentRow = [next];
+      }
+    }
+    rows.push(currentRow);
+    return rows;
+  }, [allFlowPreviewEdges, autoFlowLayout, flowPreviewRequests]);
+
+  useEffect(() => {
+    if (autoFlowLayout !== 'hybrid') {
+      setHybridConnectorOffsets({});
+      return;
+    }
+
+    const recompute = () => {
+      const next: Record<number, number> = {};
+      flowPreviewRows.forEach((_, rowIndex) => {
+        const anchor = hybridRowFirstNodeRefs.current[rowIndex];
+        if (!anchor) {
+          return;
+        }
+        next[rowIndex] = anchor.offsetLeft + Math.floor(anchor.offsetWidth / 2);
+      });
+      setHybridConnectorOffsets(next);
+    };
+
+    recompute();
+    window.addEventListener('resize', recompute);
+    return () => window.removeEventListener('resize', recompute);
+  }, [
+    autoFlowLayout,
+    compactFlowPreview,
+    expandedBodyPanelIds,
+    expandedFlowNodeIds,
+    flowPreviewRows,
+    showHostInPreview,
+  ]);
 
   const statusEdgeClass = (status?: number) => {
     if (!status) return 'bg-app-border';
@@ -1913,6 +1985,233 @@ export default function InterceptPanel() {
         ? prev.filter((id) => id !== panelId)
         : [...prev, panelId]
     ));
+  };
+
+  const renderFlowNodeCard = (
+    request: InterceptedRequest,
+    options?: { summaryRef?: (el: HTMLDivElement | null) => void },
+  ) => {
+    const label = formatFlowLabel(request);
+    const isHighlighted = highlightedRequestId === request.id;
+    const isExpanded = expandedFlowNodeIds.includes(request.id);
+    const hasResponse = Boolean(
+      request.responseStatusCode
+      || request.responseBody
+      || (request.responseHeaders && Object.keys(request.responseHeaders).length > 0),
+    );
+    const statusText = request.responseStatusCode
+      ? String(request.responseStatusCode)
+      : (hasResponse ? 'Response' : 'Pending');
+
+    return (
+      <div
+        className="space-y-2 cursor-pointer"
+        onClick={() => toggleFlowNodeExpanded(request.id)}
+        title="Click to show/hide request and response details"
+      >
+        <div
+          ref={options?.summaryRef}
+          className={`border rounded px-3 py-2 text-xs transition-colors ${
+          isHighlighted
+            ? 'border-app-accent bg-app-active'
+            : 'border-app-border bg-app-panel hover:bg-app-hover/40'
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            <span className="px-1.5 py-0.5 rounded bg-app-hover text-app-muted">REQ</span>
+            <span className="text-app-text font-medium">{request.method}</span>
+          </div>
+          <div className="mt-1 text-app-text truncate max-w-[200px]">{label.path}</div>
+          {showHostInPreview && (
+            <div className="text-[11px] text-app-muted truncate max-w-[200px]">{label.host}</div>
+          )}
+        </div>
+        <div className="border border-app-border rounded bg-app-panel px-3 py-2 text-xs">
+          <div className="flex items-center gap-2">
+            <span className="px-1.5 py-0.5 rounded bg-app-hover text-app-muted">RES</span>
+            <span className={hasResponse ? 'text-app-text' : 'text-app-muted'}>{statusText}</span>
+          </div>
+          {request.responseTimestamp && (
+            <div className="mt-1 text-[11px] text-app-muted">
+              {new Date(request.responseTimestamp).toLocaleTimeString()}
+            </div>
+          )}
+        </div>
+        {isExpanded && (
+          <div
+            className="border border-app-border rounded bg-app-bg text-[11px] overflow-hidden"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-0">
+              <div className="border-b xl:border-b-0 xl:border-r border-app-border">
+                <div className="px-3 py-2 bg-app-panel border-b border-app-border flex items-center justify-between">
+                  <span className="text-app-muted uppercase tracking-wider">Request</span>
+                  <span className="text-app-text font-semibold">{request.method}</span>
+                </div>
+                <div className="p-3 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => {
+                        void copyText(extractMappedValueFromRequest(request));
+                        toast.success('Mapped value copied');
+                      }}
+                      className="flex items-center gap-1 px-2 py-1 text-[11px] rounded border border-app-border text-app-muted hover:text-app-text hover:bg-app-hover"
+                    >
+                      <Copy size={11} /> Copy value
+                    </button>
+                    <button
+                      onClick={() => {
+                        void copyText(buildCurlCommand(request));
+                        toast.success('cURL copied');
+                      }}
+                      className="flex items-center gap-1 px-2 py-1 text-[11px] rounded border border-app-border text-app-muted hover:text-app-text hover:bg-app-hover"
+                    >
+                      <Copy size={11} /> Copy cURL
+                    </button>
+                    <button
+                      onClick={() => {
+                        handleSelect(request);
+                        setMappingOpen(false);
+                      }}
+                      className="flex items-center gap-1 px-2 py-1 text-[11px] rounded border border-app-border text-app-muted hover:text-app-text hover:bg-app-hover"
+                    >
+                      Open in traffic
+                    </button>
+                  </div>
+                  <div className="text-app-text break-all">{request.url}</div>
+                  <div className="text-app-muted">Headers ({previewHeaderEntries(request.headers).total})</div>
+                  <div className="rounded border border-app-border bg-app-panel p-2 space-y-1 max-h-24 overflow-y-auto">
+                    {previewHeaderEntries(request.headers).visible.length > 0 ? (
+                      previewHeaderEntries(request.headers).visible.map(([key, value]) => (
+                        <div key={`req-${request.id}-${key}`} className="text-app-muted break-all">
+                          <span className="text-app-text">{key}:</span> {truncateFlowText(String(value), 140)}
+                        </div>
+                      ))
+                    ) : (
+                      <div className="text-app-muted">No headers</div>
+                    )}
+                    {previewHeaderEntries(request.headers).remaining > 0 && (
+                      <div className="text-app-muted">+{previewHeaderEntries(request.headers).remaining} more headers</div>
+                    )}
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div className="text-app-muted">Body</div>
+                    <button
+                      onClick={() => toggleBodyPanelExpanded(`${request.id}:req`) }
+                      className="px-2 py-0.5 text-[11px] rounded border border-app-border text-app-muted hover:text-app-text hover:bg-app-hover"
+                    >
+                      {expandedBodyPanelIds.includes(`${request.id}:req`) ? 'Hide full' : 'View full'}
+                    </button>
+                  </div>
+                  <pre className="rounded border border-app-border bg-app-panel p-2 text-app-muted whitespace-pre-wrap break-words max-h-28 overflow-y-auto font-mono">
+                    {request.body ? truncateFlowText(String(request.body), 480) : '(empty)'}
+                  </pre>
+                  {expandedBodyPanelIds.includes(`${request.id}:req`) && (
+                    <div className="border border-app-border rounded overflow-hidden">
+                      <Editor
+                        height="180px"
+                        language={detectLanguage(
+                          request.headers?.['content-type'] || request.headers?.['Content-Type'] || '',
+                          String(request.body || ''),
+                        )}
+                        value={String(request.body || '')}
+                        theme="vs-dark"
+                        options={{
+                          readOnly: true,
+                          minimap: { enabled: false },
+                          fontSize: 12,
+                          lineNumbers: 'on',
+                          wordWrap: 'on',
+                          scrollBeyondLastLine: false,
+                          automaticLayout: true,
+                        }}
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <div className="px-3 py-2 bg-app-panel border-b border-app-border flex items-center justify-between">
+                  <span className="text-app-muted uppercase tracking-wider">Response</span>
+                  <span className={`font-semibold ${responseStatusTextClass(request.responseStatusCode)}`}>
+                    {request.responseStatusCode ? `HTTP ${request.responseStatusCode}` : 'Pending'}
+                  </span>
+                </div>
+                <div className="p-3 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => {
+                        const raw = request.responseBody || '';
+                        void copyText(raw);
+                        toast.success('Response copied');
+                      }}
+                      className="flex items-center gap-1 px-2 py-1 text-[11px] rounded border border-app-border text-app-muted hover:text-app-text hover:bg-app-hover"
+                    >
+                      <Copy size={11} /> Copy response
+                    </button>
+                  </div>
+                  {request.responseTimestamp && (
+                    <div className="text-app-muted">
+                      Received: {new Date(request.responseTimestamp).toLocaleTimeString()}
+                    </div>
+                  )}
+                  <div className="text-app-muted">Headers ({previewHeaderEntries(request.responseHeaders).total})</div>
+                  <div className="rounded border border-app-border bg-app-panel p-2 space-y-1 max-h-24 overflow-y-auto">
+                    {previewHeaderEntries(request.responseHeaders).visible.length > 0 ? (
+                      previewHeaderEntries(request.responseHeaders).visible.map(([key, value]) => (
+                        <div key={`res-${request.id}-${key}`} className="text-app-muted break-all">
+                          <span className="text-app-text">{key}:</span> {truncateFlowText(String(value), 140)}
+                        </div>
+                      ))
+                    ) : (
+                      <div className="text-app-muted">No headers</div>
+                    )}
+                    {previewHeaderEntries(request.responseHeaders).remaining > 0 && (
+                      <div className="text-app-muted">+{previewHeaderEntries(request.responseHeaders).remaining} more headers</div>
+                    )}
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div className="text-app-muted">Body</div>
+                    <button
+                      onClick={() => toggleBodyPanelExpanded(`${request.id}:res`) }
+                      className="px-2 py-0.5 text-[11px] rounded border border-app-border text-app-muted hover:text-app-text hover:bg-app-hover"
+                    >
+                      {expandedBodyPanelIds.includes(`${request.id}:res`) ? 'Hide full' : 'View full'}
+                    </button>
+                  </div>
+                  <pre className="rounded border border-app-border bg-app-panel p-2 text-app-muted whitespace-pre-wrap break-words max-h-28 overflow-y-auto font-mono">
+                    {request.responseBody ? truncateFlowText(String(request.responseBody), 480) : '(empty)'}
+                  </pre>
+                  {expandedBodyPanelIds.includes(`${request.id}:res`) && (
+                    <div className="border border-app-border rounded overflow-hidden">
+                      <Editor
+                        height="180px"
+                        language={detectLanguage(
+                          request.responseHeaders?.['content-type'] || request.responseHeaders?.['Content-Type'] || '',
+                          String(request.responseBody || ''),
+                        )}
+                        value={String(request.responseBody || '')}
+                        theme="vs-dark"
+                        options={{
+                          readOnly: true,
+                          minimap: { enabled: false },
+                          fontSize: 12,
+                          lineNumbers: 'on',
+                          wordWrap: 'on',
+                          scrollBeyondLastLine: false,
+                          automaticLayout: true,
+                        }}
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
   };
 
   const getEditorSelectionText = (editor: { getSelection: () => unknown; getModel: () => unknown; getPosition: () => unknown }) => {
@@ -3295,227 +3594,47 @@ export default function InterceptPanel() {
                 {flowPreviewRequests.length === 0 ? (
                   <div className="text-sm text-app-muted">No flow preview yet.</div>
                 ) : (
-                  <div className={autoFlowLayout === 'horizontal' ? 'overflow-x-auto' : 'overflow-y-auto'}>
-                    <div className={autoFlowLayout === 'horizontal' ? 'flex items-start gap-4 min-w-max' : 'flex flex-col gap-4'}>
-                      {flowPreviewRequests.map((request, index) => {
-                        const label = formatFlowLabel(request);
-                        const isHighlighted = highlightedRequestId === request.id;
-                        const isExpanded = expandedFlowNodeIds.includes(request.id);
-                        const hasResponse = Boolean(
-                          request.responseStatusCode
-                          || request.responseBody
-                          || (request.responseHeaders && Object.keys(request.responseHeaders).length > 0),
-                        );
-                        const statusText = request.responseStatusCode
-                          ? String(request.responseStatusCode)
-                          : (hasResponse ? 'Response' : 'Pending');
-
-                        return (
-                          <div key={request.id} className={autoFlowLayout === 'horizontal' ? 'flex items-center' : 'flex flex-col'}>
-                            <div
-                              className="space-y-2 cursor-pointer"
-                              onClick={() => toggleFlowNodeExpanded(request.id)}
-                              title="Click to show/hide request and response details"
-                            >
-                              <div className={`border rounded px-3 py-2 text-xs transition-colors ${
-                                isHighlighted
-                                  ? 'border-app-accent bg-app-active'
-                                  : 'border-app-border bg-app-panel hover:bg-app-hover/40'
-                              }`}>
-                                <div className="flex items-center gap-2">
-                                  <span className="px-1.5 py-0.5 rounded bg-app-hover text-app-muted">REQ</span>
-                                  <span className="text-app-text font-medium">{request.method}</span>
-                                </div>
-                                <div className="mt-1 text-app-text truncate max-w-[200px]">{label.path}</div>
-                                {showHostInPreview && (
-                                  <div className="text-[11px] text-app-muted truncate max-w-[200px]">{label.host}</div>
-                                )}
-                              </div>
-                              <div className="border border-app-border rounded bg-app-panel px-3 py-2 text-xs">
-                                <div className="flex items-center gap-2">
-                                  <span className="px-1.5 py-0.5 rounded bg-app-hover text-app-muted">RES</span>
-                                  <span className={hasResponse ? 'text-app-text' : 'text-app-muted'}>{statusText}</span>
-                                </div>
-                                {request.responseTimestamp && (
-                                  <div className="mt-1 text-[11px] text-app-muted">
-                                    {new Date(request.responseTimestamp).toLocaleTimeString()}
-                                  </div>
-                                )}
-                              </div>
-                              {isExpanded && (
-                                <div
-                                  className="border border-app-border rounded bg-app-bg text-[11px] overflow-hidden"
-                                  onClick={(event) => event.stopPropagation()}
-                                >
-                                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-0">
-                                    <div className="border-b xl:border-b-0 xl:border-r border-app-border">
-                                      <div className="px-3 py-2 bg-app-panel border-b border-app-border flex items-center justify-between">
-                                        <span className="text-app-muted uppercase tracking-wider">Request</span>
-                                        <span className="text-app-text font-semibold">{request.method}</span>
-                                      </div>
-                                      <div className="p-3 space-y-2">
-                                        <div className="flex items-center gap-2">
-                                          <button
-                                            onClick={() => {
-                                              void copyText(extractMappedValueFromRequest(request));
-                                              toast.success('Mapped value copied');
-                                            }}
-                                            className="flex items-center gap-1 px-2 py-1 text-[11px] rounded border border-app-border text-app-muted hover:text-app-text hover:bg-app-hover"
-                                          >
-                                            <Copy size={11} /> Copy value
-                                          </button>
-                                          <button
-                                            onClick={() => {
-                                              void copyText(buildCurlCommand(request));
-                                              toast.success('cURL copied');
-                                            }}
-                                            className="flex items-center gap-1 px-2 py-1 text-[11px] rounded border border-app-border text-app-muted hover:text-app-text hover:bg-app-hover"
-                                          >
-                                            <Copy size={11} /> Copy cURL
-                                          </button>
-                                          <button
-                                            onClick={() => {
-                                              handleSelect(request);
-                                              setMappingOpen(false);
-                                            }}
-                                            className="flex items-center gap-1 px-2 py-1 text-[11px] rounded border border-app-border text-app-muted hover:text-app-text hover:bg-app-hover"
-                                          >
-                                            Open in traffic
-                                          </button>
-                                        </div>
-                                        <div className="text-app-text break-all">{request.url}</div>
-                                        <div className="text-app-muted">Headers ({previewHeaderEntries(request.headers).total})</div>
-                                        <div className="rounded border border-app-border bg-app-panel p-2 space-y-1 max-h-24 overflow-y-auto">
-                                          {previewHeaderEntries(request.headers).visible.length > 0 ? (
-                                            previewHeaderEntries(request.headers).visible.map(([key, value]) => (
-                                              <div key={`req-${request.id}-${key}`} className="text-app-muted break-all">
-                                                <span className="text-app-text">{key}:</span> {truncateFlowText(String(value), 140)}
-                                              </div>
-                                            ))
-                                          ) : (
-                                            <div className="text-app-muted">No headers</div>
-                                          )}
-                                          {previewHeaderEntries(request.headers).remaining > 0 && (
-                                            <div className="text-app-muted">+{previewHeaderEntries(request.headers).remaining} more headers</div>
-                                          )}
-                                        </div>
-                                        <div className="flex items-center justify-between">
-                                          <div className="text-app-muted">Body</div>
-                                          <button
-                                            onClick={() => toggleBodyPanelExpanded(`${request.id}:req`) }
-                                            className="px-2 py-0.5 text-[11px] rounded border border-app-border text-app-muted hover:text-app-text hover:bg-app-hover"
-                                          >
-                                            {expandedBodyPanelIds.includes(`${request.id}:req`) ? 'Hide full' : 'View full'}
-                                          </button>
-                                        </div>
-                                        <pre className="rounded border border-app-border bg-app-panel p-2 text-app-muted whitespace-pre-wrap break-words max-h-28 overflow-y-auto font-mono">
-                                          {request.body ? truncateFlowText(String(request.body), 480) : '(empty)'}
-                                        </pre>
-                                        {expandedBodyPanelIds.includes(`${request.id}:req`) && (
-                                          <div className="border border-app-border rounded overflow-hidden">
-                                            <Editor
-                                              height="180px"
-                                              language={detectLanguage(
-                                                request.headers?.['content-type'] || request.headers?.['Content-Type'] || '',
-                                                String(request.body || ''),
-                                              )}
-                                              value={String(request.body || '')}
-                                              theme="vs-dark"
-                                              options={{
-                                                readOnly: true,
-                                                minimap: { enabled: false },
-                                                fontSize: 12,
-                                                lineNumbers: 'on',
-                                                wordWrap: 'on',
-                                                scrollBeyondLastLine: false,
-                                                automaticLayout: true,
-                                              }}
-                                            />
-                                          </div>
-                                        )}
-                                      </div>
+                  <div className={autoFlowLayout === 'horizontal' ? 'overflow-x-auto' : (autoFlowLayout === 'hybrid' ? 'overflow-auto' : 'overflow-y-auto')}>
+                    {autoFlowLayout === 'hybrid' ? (
+                      <div className="flex flex-col gap-3 min-w-max pr-1">
+                        {flowPreviewRows.map((row, rowIndex) => (
+                          <div key={`row-${rowIndex}`} className="flex flex-col items-start">
+                            <div className="flex items-start gap-4 min-w-max">
+                              {row.map((request, index) => (
+                                <div key={request.id} className="flex items-center">
+                                  {renderFlowNodeCard(request, index === 0 ? {
+                                    summaryRef: (el) => {
+                                      hybridRowFirstNodeRefs.current[rowIndex] = el;
+                                    },
+                                  } : undefined)}
+                                  {index < row.length - 1 && (
+                                    <div className={compactFlowPreview ? 'flex items-center px-2' : 'flex items-center px-3'}>
+                                      <div className={`h-px ${compactFlowPreview ? 'w-6' : 'w-10'} ${statusEdgeClass(row[index + 1].responseStatusCode)}`} />
+                                      <div className={`ml-1 h-2 w-2 border-t border-r ${statusEdgeClass(row[index + 1].responseStatusCode)} rotate-45`} />
                                     </div>
-
-                                    <div>
-                                      <div className="px-3 py-2 bg-app-panel border-b border-app-border flex items-center justify-between">
-                                        <span className="text-app-muted uppercase tracking-wider">Response</span>
-                                        <span className={`font-semibold ${responseStatusTextClass(request.responseStatusCode)}`}>
-                                          {request.responseStatusCode ? `HTTP ${request.responseStatusCode}` : 'Pending'}
-                                        </span>
-                                      </div>
-                                      <div className="p-3 space-y-2">
-                                        <div className="flex items-center gap-2">
-                                          <button
-                                            onClick={() => {
-                                              const raw = request.responseBody || '';
-                                              void copyText(raw);
-                                              toast.success('Response copied');
-                                            }}
-                                            className="flex items-center gap-1 px-2 py-1 text-[11px] rounded border border-app-border text-app-muted hover:text-app-text hover:bg-app-hover"
-                                          >
-                                            <Copy size={11} /> Copy response
-                                          </button>
-                                        </div>
-                                        {request.responseTimestamp && (
-                                          <div className="text-app-muted">
-                                            Received: {new Date(request.responseTimestamp).toLocaleTimeString()}
-                                          </div>
-                                        )}
-                                        <div className="text-app-muted">Headers ({previewHeaderEntries(request.responseHeaders).total})</div>
-                                        <div className="rounded border border-app-border bg-app-panel p-2 space-y-1 max-h-24 overflow-y-auto">
-                                          {previewHeaderEntries(request.responseHeaders).visible.length > 0 ? (
-                                            previewHeaderEntries(request.responseHeaders).visible.map(([key, value]) => (
-                                              <div key={`res-${request.id}-${key}`} className="text-app-muted break-all">
-                                                <span className="text-app-text">{key}:</span> {truncateFlowText(String(value), 140)}
-                                              </div>
-                                            ))
-                                          ) : (
-                                            <div className="text-app-muted">No headers</div>
-                                          )}
-                                          {previewHeaderEntries(request.responseHeaders).remaining > 0 && (
-                                            <div className="text-app-muted">+{previewHeaderEntries(request.responseHeaders).remaining} more headers</div>
-                                          )}
-                                        </div>
-                                        <div className="flex items-center justify-between">
-                                          <div className="text-app-muted">Body</div>
-                                          <button
-                                            onClick={() => toggleBodyPanelExpanded(`${request.id}:res`) }
-                                            className="px-2 py-0.5 text-[11px] rounded border border-app-border text-app-muted hover:text-app-text hover:bg-app-hover"
-                                          >
-                                            {expandedBodyPanelIds.includes(`${request.id}:res`) ? 'Hide full' : 'View full'}
-                                          </button>
-                                        </div>
-                                        <pre className="rounded border border-app-border bg-app-panel p-2 text-app-muted whitespace-pre-wrap break-words max-h-28 overflow-y-auto font-mono">
-                                          {request.responseBody ? truncateFlowText(String(request.responseBody), 480) : '(empty)'}
-                                        </pre>
-                                        {expandedBodyPanelIds.includes(`${request.id}:res`) && (
-                                          <div className="border border-app-border rounded overflow-hidden">
-                                            <Editor
-                                              height="180px"
-                                              language={detectLanguage(
-                                                request.responseHeaders?.['content-type'] || request.responseHeaders?.['Content-Type'] || '',
-                                                String(request.responseBody || ''),
-                                              )}
-                                              value={String(request.responseBody || '')}
-                                              theme="vs-dark"
-                                              options={{
-                                                readOnly: true,
-                                                minimap: { enabled: false },
-                                                fontSize: 12,
-                                                lineNumbers: 'on',
-                                                wordWrap: 'on',
-                                                scrollBeyondLastLine: false,
-                                                automaticLayout: true,
-                                              }}
-                                            />
-                                          </div>
-                                        )}
-                                      </div>
-                                    </div>
-                                  </div>
+                                  )}
                                 </div>
-                              )}
+                              ))}
                             </div>
+                            {rowIndex < flowPreviewRows.length - 1 && (
+                              <div
+                                className={compactFlowPreview ? 'py-1' : 'py-2'}
+                                style={{ marginLeft: `${hybridConnectorOffsets[rowIndex] ?? (compactFlowPreview ? 98 : 112)}px` }}
+                              >
+                                <div className="flex flex-col items-center">
+                                  <div className={`w-px ${compactFlowPreview ? 'h-5' : 'h-8'} ${statusEdgeClass(flowPreviewRows[rowIndex + 1][0]?.responseStatusCode)}`} />
+                                  <div className={`mt-1 h-2 w-2 border-b border-r ${statusEdgeClass(flowPreviewRows[rowIndex + 1][0]?.responseStatusCode)} rotate-45`} />
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className={autoFlowLayout === 'horizontal' ? 'flex items-start gap-4 min-w-max' : 'flex flex-col gap-4'}>
+                        {flowPreviewRequests.map((request, index) => (
+                          <div key={request.id} className={autoFlowLayout === 'horizontal' ? 'flex items-center' : 'flex flex-col'}>
+                            {renderFlowNodeCard(request)}
                             {index < flowPreviewRequests.length - 1 && (
                               autoFlowLayout === 'horizontal' ? (
                                 <div className={compactFlowPreview ? 'flex items-center px-2' : 'flex items-center px-3'}>
@@ -3530,9 +3649,9 @@ export default function InterceptPanel() {
                               )
                             )}
                           </div>
-                        );
-                      })}
-                    </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
