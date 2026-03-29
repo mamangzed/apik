@@ -13,7 +13,7 @@ apik.env.set('request_time', now);
 
 const token = apik.env.get('token');
 if (token) {
-  apik.request.setHeader('Authorization', `Bearer \${token}`);
+  apik.request.setHeader('Authorization', 'Bearer ' + token);
 }
 
 // You can mutate URL/query too:

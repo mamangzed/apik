@@ -1,6 +1,7 @@
 name: Auto Release on Version Change
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - main
@@ -10,6 +11,7 @@ on:
       - backend/package.json
       - extension/manifest.json
       - CHANGELOG.md
+      - .github/workflows/auto-release-on-version-change.yml
 
 permissions:
   contents: write
@@ -87,7 +89,7 @@ jobs:
           exit 1
 
       - name: Create GitHub Release
-        if: steps.detect.outputs.version != '' && steps.detect.outputs.tag_exists == 'false' && steps.detect.outputs.versions_match == 'true'
+        if: steps.detect.outputs.version != '' && steps.detect.outputs.versions_match == 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.detect.outputs.version }}

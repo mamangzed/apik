@@ -315,26 +315,6 @@ export default function ResponseViewer() {
               padding: { top: 8 },
               automaticLayout: true,
             }}
-
-            function AssertionRow({ assertion }: { assertion: CollectionRunAssertion }) {
-              return (
-                <div
-                  className={`rounded border px-2 py-1 text-xs ${
-                    assertion.passed
-                      ? 'border-emerald-900/60 bg-emerald-950/20 text-emerald-300'
-                      : 'border-red-900/60 bg-red-950/20 text-red-300'
-                  }`}
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="font-medium truncate">{assertion.name}</span>
-                    <span className="uppercase tracking-wide text-[10px]">{assertion.passed ? 'pass' : 'fail'}</span>
-                  </div>
-                  {!assertion.passed && assertion.error && (
-                    <p className="mt-1 text-red-200/90 break-words">{assertion.error}</p>
-                  )}
-                </div>
-              );
-            }
           />
         )}
 
@@ -566,6 +546,26 @@ function HistoryEntryDetail({ entry }: { entry: RequestHistoryEntry }) {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function AssertionRow({ assertion }: { assertion: CollectionRunAssertion }) {
+  return (
+    <div
+      className={`rounded border px-2 py-1 text-xs ${
+        assertion.passed
+          ? 'border-emerald-900/60 bg-emerald-950/20 text-emerald-300'
+          : 'border-red-900/60 bg-red-950/20 text-red-300'
+      }`}
+    >
+      <div className="flex items-center justify-between gap-3">
+        <span className="font-medium truncate">{assertion.name}</span>
+        <span className="uppercase tracking-wide text-[10px]">{assertion.passed ? 'pass' : 'fail'}</span>
+      </div>
+      {!assertion.passed && assertion.error && (
+        <p className="mt-1 text-red-200/90 break-words">{assertion.error}</p>
+      )}
     </div>
   );
 }
