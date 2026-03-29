@@ -7,13 +7,19 @@ function defaultSharing(): CollectionSharing {
   return {
     collection: { access: 'private', token: null },
     docs: { access: 'private', token: null },
+    form: { access: 'private', token: null },
   };
 }
 
 function normalizeCollection(collection: Collection): Collection {
+  const sharing = collection.sharing || ({} as CollectionSharing);
   return {
     ...collection,
-    sharing: collection.sharing || defaultSharing(),
+    sharing: {
+      collection: sharing.collection || defaultSharing().collection,
+      docs: sharing.docs || defaultSharing().docs,
+      form: sharing.form || defaultSharing().form,
+    },
     storageScope: 'local',
   };
 }
