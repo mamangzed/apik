@@ -1,7 +1,7 @@
 {
     "manifest_version": 3,
     "name": "APIK - API Interceptor",
-    "version": "1.3.0",
+    "version": "1.3.1",
     "description": "Intercept, inspect and modify HTTP requests from any web page. Works with APIK API Client.",
     "permissions": [
         "webRequest",

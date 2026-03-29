@@ -192,6 +192,13 @@ export default function InterceptPanel() {
   const [mappingValue, setMappingValue] = useState('');
   const [mappingMatches, setMappingMatches] = useState<MappingMatch[]>([]);
   const [selectedMatchId, setSelectedMatchId] = useState<string | null>(null);
+  const [mappingMode, setMappingMode] = useState<'pair' | 'global'>('pair');
+  const [flowLayout, setFlowLayout] = useState<'horizontal' | 'vertical'>('horizontal');
+  const [showHostInPreview, setShowHostInPreview] = useState(true);
+  const [showOnlyMatchedRequests, setShowOnlyMatchedRequests] = useState(false);
+  const [compactFlowPreview, setCompactFlowPreview] = useState(false);
+  const [compactPreferenceSet, setCompactPreferenceSet] = useState(false);
+  const [isNarrowScreen, setIsNarrowScreen] = useState(false);
   const [targetCollectionId, setTargetCollectionId] = useState<string | null>(null);
   const [targetPlacement, setTargetPlacement] = useState<'header' | 'param' | 'body'>('header');
   const [targetKey, setTargetKey] = useState('');
@@ -210,6 +217,107 @@ export default function InterceptPanel() {
     window.addEventListener('__apix_find__', handleFind as EventListener);
     return () => window.removeEventListener('__apix_find__', handleFind as EventListener);
   }, []);
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsNarrowScreen(window.innerWidth < 1024);
+    };
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  const flowLayoutBaseKey = 'apik.flow.preview.layout';
+  const flowCompactBaseKey = 'apik.flow.preview.compact';
+
+  const flowLayoutStorageKey = useMemo(() => {
+    const base = flowLayoutBaseKey;
+    if (!userId || !targetCollectionId) return base;
+    return `${base}.${userId}.${targetCollectionId}`;
+  }, [targetCollectionId, userId]);
+
+  const flowCompactStorageKey = useMemo(() => {
+    const base = flowCompactBaseKey;
+    if (!userId || !targetCollectionId) return base;
+    return `${base}.${userId}.${targetCollectionId}`;
+  }, [targetCollectionId, userId]);
+
+  useEffect(() => {
+    try {
+      const scoped = localStorage.getItem(flowLayoutStorageKey);
+      if (scoped === 'horizontal' || scoped === 'vertical') {
+        setFlowLayout(scoped);
+        return;
+      }
+      const fallback = localStorage.getItem(flowLayoutBaseKey);
+      if (fallback === 'horizontal' || fallback === 'vertical') {
+        setFlowLayout(fallback);
+      }
+    } catch {
+      // Ignore storage issues.
+    }
+  }, [flowLayoutStorageKey]);
+
+  useEffect(() => {
+    try {
+      const scoped = localStorage.getItem(flowCompactStorageKey);
+      if (scoped === 'true' || scoped === 'false') {
+        setCompactFlowPreview(scoped === 'true');
+        setCompactPreferenceSet(true);
+        return;
+      }
+      const fallback = localStorage.getItem(flowCompactBaseKey);
+      if (fallback === 'true' || fallback === 'false') {
+        setCompactFlowPreview(fallback === 'true');
+        setCompactPreferenceSet(true);
+      }
+    } catch {
+      // Ignore storage issues.
+    }
+  }, [flowCompactStorageKey]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(flowLayoutStorageKey, flowLayout);
+    } catch {
+      // Ignore storage issues.
+    }
+  }, [flowLayout, flowLayoutStorageKey]);
+
+  useEffect(() => {
+    try {
+      if (!compactPreferenceSet) {
+        return;
+      }
+      localStorage.setItem(flowCompactStorageKey, compactFlowPreview ? 'true' : 'false');
+    } catch {
+      // Ignore storage issues.
+    }
+  }, [compactFlowPreview, compactPreferenceSet, flowCompactStorageKey]);
+
+  useEffect(() => {
+    if (!compactPreferenceSet) {
+      setCompactFlowPreview(isNarrowScreen);
+    }
+  }, [compactPreferenceSet, isNarrowScreen]);
+
+  const resetFlowLayout = () => {
+    setFlowLayout('horizontal');
+    setCompactFlowPreview(false);
+    setCompactPreferenceSet(false);
+    try {
+      localStorage.removeItem(flowLayoutStorageKey);
+      localStorage.removeItem(flowCompactStorageKey);
+      if (flowLayoutStorageKey !== flowLayoutBaseKey) {
+        localStorage.removeItem(flowLayoutBaseKey);
+      }
+      if (flowCompactStorageKey !== flowCompactBaseKey) {
+        localStorage.removeItem(flowCompactBaseKey);
+      }
+    } catch {
+      // Ignore storage issues.
+    }
+  };
 
   const scopeId = useMemo(() => {
     try {
@@ -415,7 +523,7 @@ export default function InterceptPanel() {
     }
   };
 
-  type MappingSource = 'response-header' | 'response-body';
+  type MappingSource = 'response-header' | 'response-body' | 'request-header' | 'request-body';
 
   interface MappingMatch {
     id: string;
@@ -497,8 +605,8 @@ export default function InterceptPanel() {
         return;
       }
 
-      const headers = request.responseHeaders || {};
-      Object.entries(headers).forEach(([key, headerValue]) => {
+      const responseHeaders = request.responseHeaders || {};
+      Object.entries(responseHeaders).forEach(([key, headerValue]) => {
         const text = String(headerValue ?? '');
         if (text === trimmed || text.includes(trimmed)) {
           matches.push({
@@ -507,6 +615,20 @@ export default function InterceptPanel() {
             source: 'response-header',
             key,
             preview: `${key}: ${text}`,
+          });
+        }
+      });
+
+      const requestHeaders = request.headers || {};
+      Object.entries(requestHeaders).forEach(([key, headerValue]) => {
+        const text = String(headerValue ?? '');
+        if (text === trimmed || text.includes(trimmed)) {
+          matches.push({
+            id: `${request.id}-req-header-${key}`,
+            request,
+            source: 'request-header',
+            key,
+            preview: `[req] ${key}: ${text}`,
           });
         }
       });
@@ -530,6 +652,26 @@ export default function InterceptPanel() {
           });
         }
       }
+
+      if (request.body) {
+        const reqBody = String(request.body);
+        if (reqBody.includes(trimmed)) {
+          let jsonPath: string | null = null;
+          try {
+            const parsed = JSON.parse(reqBody);
+            jsonPath = findJsonPath(parsed, trimmed);
+          } catch {
+            jsonPath = null;
+          }
+          matches.push({
+            id: `${request.id}-req-body-${jsonPath || 'text'}`,
+            request,
+            source: 'request-body',
+            jsonPath: jsonPath || undefined,
+            preview: jsonPath ? `[req] ${jsonPath} = ${trimmed}` : `[req] Body contains ${trimmed}`,
+          });
+        }
+      }
     });
 
     return matches;
@@ -537,7 +679,7 @@ export default function InterceptPanel() {
 
   const openMappingModal = (value: string, options?: { placement?: 'header' | 'param' | 'body'; key?: string }) => {
     if (!selected) return;
-    const matches = findMatchesForValue(value, selected.id);
+    const matches = findMatchesForValue(value);
     const defaultMatch = matches.find((match) => match.request.timestamp < selected.timestamp) || matches[0] || null;
     setMappingValue(value);
     setMappingMatches(matches);
@@ -550,6 +692,7 @@ export default function InterceptPanel() {
     setTargetPlacement(placement);
     setTargetKey(defaultKey);
     setEnvKey(normalizeEnvKey(defaultKey || value));
+    setMappingMode('pair');
     setMappingOpen(true);
   };
 
@@ -604,14 +747,122 @@ export default function InterceptPanel() {
     };
   };
 
-  const buildSourceScript = (match: MappingMatch, envName: string) => {
+  const escapeScriptValue = (value: string) => value.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+
+  const buildSourceScript = (
+    match: MappingMatch,
+    envName: string,
+    fallbackValue: string,
+  ): { stage: 'pre' | 'post'; script: string } => {
+    if (match.source === 'request-header' && match.key) {
+      return {
+        stage: 'pre',
+        script: `const value = apik.request.getHeader('${match.key}');\nif (value) apik.env.set('${envName}', String(value));`,
+      };
+    }
+    if (match.source === 'request-body') {
+      const safeFallback = escapeScriptValue(fallbackValue);
+      const jsonPath = match.jsonPath ? match.jsonPath.replace(/^\$\.?/, 'json.') : null;
+      const base = [
+        "const raw = apik.request.body || '';",
+        "let value = '';",
+        jsonPath
+          ? `try { const json = JSON.parse(raw); value = ${jsonPath}; } catch { value = ''; }`
+          : '',
+        `if (!value && raw.includes('${safeFallback}')) value = '${safeFallback}';`,
+        `if (value) apik.env.set('${envName}', String(value));`,
+      ].filter(Boolean).join('\n');
+      return { stage: 'pre', script: base };
+    }
     if (match.source === 'response-header' && match.key) {
-      return `const value = apik.response.header('${match.key}');\nif (value) apik.env.set('${envName}', String(value));`;
+      return {
+        stage: 'post',
+        script: `const value = apik.response.header('${match.key}');\nif (value) apik.env.set('${envName}', String(value));`,
+      };
     }
     if (match.source === 'response-body' && match.jsonPath) {
-      return `const json = apik.response.json();\nconst value = ${match.jsonPath.replace(/^\$\.?/, 'json.')};\nif (value != null) apik.env.set('${envName}', String(value));`;
+      return {
+        stage: 'post',
+        script: `const json = apik.response.json();\nconst value = ${match.jsonPath.replace(/^\$\.?/, 'json.')};\nif (value != null) apik.env.set('${envName}', String(value));`,
+      };
     }
-    return `const value = apik.response.text();\nif (value) apik.env.set('${envName}', String(value));`;
+    return {
+      stage: 'post',
+      script: `const value = apik.response.text();\nif (value) apik.env.set('${envName}', String(value));`,
+    };
+  };
+
+  const replaceValueInRequest = (request: ReturnType<typeof buildRequestFromIntercept>, value: string, envName: string) => {
+    const placeholder = `{{${envName}}}`;
+    if (request.headers) {
+      request.headers = request.headers.map((header) => ({
+        ...header,
+        value: header.value.includes(value) ? header.value.split(value).join(placeholder) : header.value,
+      }));
+    }
+    if (request.params) {
+      request.params = request.params.map((param) => ({
+        ...param,
+        value: param.value.includes(value) ? param.value.split(value).join(placeholder) : param.value,
+      }));
+    }
+    if (request.body?.content) {
+      request.body = {
+        ...request.body,
+        content: request.body.content.includes(value)
+          ? request.body.content.split(value).join(placeholder)
+          : request.body.content,
+      };
+    }
+    if (request.url && request.url.includes(value)) {
+      request.url = request.url.split(value).join(placeholder);
+    }
+    return request;
+  };
+
+  const buildGlobalFlow = (value: string, envName: string) => {
+    const matches = findMatchesForValue(value);
+    if (matches.length === 0) {
+      return { matches, chain: [] as ReturnType<typeof buildRequestFromIntercept>[] };
+    }
+
+    const uniqueRequests: InterceptedRequest[] = [];
+    const seen = new Set<string>();
+    matches
+      .slice()
+      .sort((a, b) => a.request.timestamp - b.request.timestamp)
+      .forEach((match) => {
+        if (!seen.has(match.request.id)) {
+          seen.add(match.request.id);
+          uniqueRequests.push(match.request);
+        }
+      });
+
+    const sourceRequest = uniqueRequests[0];
+    const sourceMatch = matches.find((match) => match.request.id === sourceRequest.id && match.source.startsWith('response'))
+      || matches.find((match) => match.request.id === sourceRequest.id)
+      || matches[0];
+
+    const chain = uniqueRequests.map((req, index) => {
+      const entry = buildRequestFromIntercept(req);
+      if (index === 0 && sourceMatch) {
+        const sourceScript = buildSourceScript(sourceMatch, envName, value);
+        if (sourceScript.stage === 'pre') {
+          entry.preRequestScript = entry.preRequestScript
+            ? `${entry.preRequestScript}\n\n${sourceScript.script}`
+            : sourceScript.script;
+        } else {
+          entry.testScript = entry.testScript
+            ? `${entry.testScript}\n\n${sourceScript.script}`
+            : sourceScript.script;
+        }
+      } else {
+        replaceValueInRequest(entry, value, envName);
+      }
+      return entry;
+    });
+
+    return { matches, chain };
   };
 
   const applyTargetMapping = (
@@ -661,34 +912,58 @@ export default function InterceptPanel() {
     if (!selected || !targetCollectionId || !mappingValue.trim()) {
       return;
     }
-    const match = mappingMatches.find((item) => item.id === selectedMatchId) || null;
-    if (!match) {
-      toast.error('Select a source match first');
-      return;
-    }
-
-    const envName = normalizeEnvKey(envKey || targetKey || mappingValue);
-    const sourceRequest = buildRequestFromIntercept(match.request);
-    const targetRequest = buildRequestFromIntercept(selected);
-
-    sourceRequest.testScript = sourceRequest.testScript
-      ? `${sourceRequest.testScript}\n\n${buildSourceScript(match, envName)}`
-      : buildSourceScript(match, envName);
-
-    applyTargetMapping(targetRequest, envName, targetPlacement, targetKey, mappingValue);
-
     try {
       setSavingCollectionId(targetCollectionId);
-      await addRequestToCollection(targetCollectionId, {
-        ...sourceRequest,
-        name: `1. ${sourceRequest.name}`,
-      });
-      await addRequestToCollection(targetCollectionId, {
-        ...targetRequest,
-        name: `2. ${targetRequest.name}`,
-        preRequestScript: targetRequest.preRequestScript || '',
-      });
-      toast.success('Flow added to collection');
+      if (mappingMode === 'global') {
+        const envName = normalizeEnvKey(envKey || targetKey || mappingValue);
+        const { chain } = buildGlobalFlow(mappingValue, envName);
+        if (chain.length === 0) {
+          toast.error('No flow candidates found');
+          return;
+        }
+        let index = 1;
+        for (const entry of chain) {
+          await addRequestToCollection(targetCollectionId, {
+            ...entry,
+            name: `${index}. ${entry.name}`,
+          });
+          index += 1;
+        }
+        toast.success('Global flow added to collection');
+      } else {
+        const match = mappingMatches.find((item) => item.id === selectedMatchId) || null;
+        if (!match) {
+          toast.error('Select a source match first');
+          return;
+        }
+
+        const envName = normalizeEnvKey(envKey || targetKey || mappingValue);
+        const sourceRequest = buildRequestFromIntercept(match.request);
+        const targetRequest = buildRequestFromIntercept(selected);
+        const sourceScript = buildSourceScript(match, envName, mappingValue);
+        if (sourceScript.stage === 'pre') {
+          sourceRequest.preRequestScript = sourceRequest.preRequestScript
+            ? `${sourceRequest.preRequestScript}\n\n${sourceScript.script}`
+            : sourceScript.script;
+        } else {
+          sourceRequest.testScript = sourceRequest.testScript
+            ? `${sourceRequest.testScript}\n\n${sourceScript.script}`
+            : sourceScript.script;
+        }
+
+        applyTargetMapping(targetRequest, envName, targetPlacement, targetKey, mappingValue);
+
+        await addRequestToCollection(targetCollectionId, {
+          ...sourceRequest,
+          name: `1. ${sourceRequest.name}`,
+        });
+        await addRequestToCollection(targetCollectionId, {
+          ...targetRequest,
+          name: `2. ${targetRequest.name}`,
+          preRequestScript: targetRequest.preRequestScript || '',
+        });
+        toast.success('Flow added to collection');
+      }
       setMappingOpen(false);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Failed to add flow');
@@ -748,7 +1023,7 @@ export default function InterceptPanel() {
       return;
     }
 
-    const matches = findMatchesForValue(trimmed, selected.id);
+    const matches = findMatchesForValue(trimmed);
     const match = pickBestMatch(matches, selected);
     if (!match) {
       toast.error('No source match found for this value');
@@ -763,33 +1038,29 @@ export default function InterceptPanel() {
       setTargetPlacement(key ? 'header' : 'body');
       setTargetKey(key || '');
       setEnvKey(normalizeEnvKey(key || trimmed));
+      setMappingMode('global');
       setMappingOpen(true);
       toast('Select a collection to finalize the flow');
       return;
     }
 
     const envName = normalizeEnvKey(detectedKey || trimmed);
-    const sourceRequest = buildRequestFromIntercept(match.request);
-    const targetRequest = buildRequestFromIntercept(selected);
-
-    sourceRequest.testScript = sourceRequest.testScript
-      ? `${sourceRequest.testScript}\n\n${buildSourceScript(match, envName)}`
-      : buildSourceScript(match, envName);
-
-    const placement: 'header' | 'body' | 'param' = placementOverride || (detectedKey ? 'header' : 'body');
-    applyTargetMapping(targetRequest, envName, placement, detectedKey || '', trimmed);
+    const { chain } = buildGlobalFlow(trimmed, envName);
+    if (chain.length === 0) {
+      toast.error('No flow candidates found');
+      return;
+    }
 
     try {
       setSavingCollectionId(collectionId);
-      await addRequestToCollection(collectionId, {
-        ...sourceRequest,
-        name: `1. ${sourceRequest.name}`,
-      });
-      await addRequestToCollection(collectionId, {
-        ...targetRequest,
-        name: `2. ${targetRequest.name}`,
-        preRequestScript: targetRequest.preRequestScript || '',
-      });
+      let index = 1;
+      for (const entry of chain) {
+        await addRequestToCollection(collectionId, {
+          ...entry,
+          name: `${index}. ${entry.name}`,
+        });
+        index += 1;
+      }
       toast.success('Auto flow added to collection');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Failed to add flow');
@@ -877,6 +1148,115 @@ export default function InterceptPanel() {
       // ignore parse errors
     }
     return [] as Array<{ key: string; value: string }>;
+  };
+
+  const formatFlowLabel = (request: InterceptedRequest) => {
+    try {
+      const parsed = new URL(request.url);
+      return {
+        host: parsed.host,
+        path: parsed.pathname || '/',
+      };
+    } catch {
+      return {
+        host: safeHostname(request.url),
+        path: request.url,
+      };
+    }
+  };
+
+  const formatRequestTooltip = (request: InterceptedRequest) => {
+    const bodySize = request.body ? String(request.body).length : 0;
+    return [
+      `${request.method} ${request.url}`,
+      `Request size: ${bodySize} chars`,
+    ].join('\n');
+  };
+
+  const formatResponseTooltip = (request: InterceptedRequest) => {
+    const hasResponse = Boolean(
+      request.responseStatusCode
+      || request.responseBody
+      || (request.responseHeaders && Object.keys(request.responseHeaders).length > 0),
+    );
+    const statusLine = request.responseStatusCode
+      ? `Status: HTTP ${request.responseStatusCode}`
+      : (hasResponse ? 'Status: Response' : 'Status: Pending');
+    const bodySize = request.responseBody ? String(request.responseBody).length : 0;
+    const responseTime = request.responseTimestamp
+      ? `Response at: ${new Date(request.responseTimestamp).toLocaleTimeString()}`
+      : null;
+    return [
+      statusLine,
+      `Response size: ${bodySize} chars`,
+      responseTime,
+    ].filter(Boolean).join('\n');
+  };
+
+  const matchedRequestIds = useMemo(() => (
+    new Set(mappingMatches.map((match) => match.request.id))
+  ), [mappingMatches]);
+
+  const highlightedRequestId = useMemo(() => {
+    if (selectedMatchId) {
+      return mappingMatches.find((match) => match.id === selectedMatchId)?.request.id || null;
+    }
+    return mappingMatches[0]?.request.id || null;
+  }, [mappingMatches, selectedMatchId]);
+
+  const flowPreviewRequests = useMemo(() => {
+    if (mappingMatches.length === 0) {
+      return [] as InterceptedRequest[];
+    }
+
+    if (mappingMode === 'global') {
+      const unique: InterceptedRequest[] = [];
+      const seen = new Set<string>();
+      mappingMatches
+        .slice()
+        .sort((a, b) => a.request.timestamp - b.request.timestamp)
+        .forEach((match) => {
+          if (!seen.has(match.request.id)) {
+            seen.add(match.request.id);
+            unique.push(match.request);
+          }
+        });
+      const result = unique;
+      if (!showOnlyMatchedRequests) return result;
+      return result.filter((request) => matchedRequestIds.has(request.id));
+    }
+
+    const selectedMatch = mappingMatches.find((match) => match.id === selectedMatchId) || null;
+    const candidates = [selectedMatch?.request, selected].filter(Boolean) as InterceptedRequest[];
+    const seen = new Set<string>();
+    const result = candidates
+      .filter((request) => {
+        if (seen.has(request.id)) return false;
+        seen.add(request.id);
+        return true;
+      })
+      .sort((a, b) => a.timestamp - b.timestamp);
+    if (!showOnlyMatchedRequests) return result;
+    return result.filter((request) => matchedRequestIds.has(request.id));
+  }, [mappingMatches, mappingMode, matchedRequestIds, selected, selectedMatchId, showOnlyMatchedRequests]);
+
+  const flowPreviewEdges = useMemo(() => {
+    if (flowPreviewRequests.length < 2) {
+      return [] as Array<{ from: InterceptedRequest; to: InterceptedRequest }>;
+    }
+    return flowPreviewRequests.slice(0, -1).map((request, index) => ({
+      from: request,
+      to: flowPreviewRequests[index + 1],
+    }));
+  }, [flowPreviewRequests]);
+
+  const statusEdgeClass = (status?: number) => {
+    if (!status) return 'bg-app-border';
+    if (status >= 200 && status < 300) return 'bg-emerald-400';
+    if (status >= 300 && status < 400) return 'bg-sky-400';
+    if (status >= 400 && status < 500) return 'bg-amber-400';
+    if (status >= 500) return 'bg-rose-400';
+    return 'bg-app-border';
   };
 
   const getEditorSelectionText = (editor: { getSelection: () => unknown; getModel: () => unknown; getPosition: () => unknown }) => {
@@ -2027,6 +2407,9 @@ export default function InterceptPanel() {
             </button>
           </div>
           <div className="p-4 space-y-4">
+            <div className="text-[11px] text-app-muted">
+              Mode: {mappingMode === 'global' ? 'Global flow (first to last)' : 'Pair mapping'}
+            </div>
             <div className="space-y-2">
               <label className="text-xs text-app-muted uppercase tracking-wider">Value to map</label>
               <div className="flex items-center gap-2">
@@ -2038,7 +2421,7 @@ export default function InterceptPanel() {
                 />
                 <button
                   onClick={() => {
-                    const matches = findMatchesForValue(mappingValue, selected?.id);
+                    const matches = findMatchesForValue(mappingValue);
                     setMappingMatches(matches);
                     const defaultMatch = matches[0] || null;
                     setSelectedMatchId(defaultMatch ? defaultMatch.id : null);
@@ -2137,6 +2520,179 @@ export default function InterceptPanel() {
                   />
                 </div>
               </div>
+            </div>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="text-xs text-app-muted uppercase tracking-wider">Flow preview</div>
+                <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-2 text-[11px] text-app-muted">
+                    <span className="flex items-center gap-1">
+                      <span className="h-2 w-2 rounded-full bg-emerald-400" />2xx
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <span className="h-2 w-2 rounded-full bg-sky-400" />3xx
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <span className="h-2 w-2 rounded-full bg-amber-400" />4xx
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <span className="h-2 w-2 rounded-full bg-rose-400" />5xx
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <span className="h-2 w-2 rounded-full bg-app-border" />No response
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setShowHostInPreview((prev) => !prev)}
+                      className={`px-2 py-1 text-[11px] rounded border ${
+                        showHostInPreview
+                          ? 'border-app-accent bg-app-active text-app-text'
+                          : 'border-app-border text-app-muted hover:text-app-text hover:bg-app-hover'
+                      }`}
+                    >
+                      Show host
+                    </button>
+                    <button
+                      onClick={() => setShowOnlyMatchedRequests((prev) => !prev)}
+                      className={`px-2 py-1 text-[11px] rounded border ${
+                        showOnlyMatchedRequests
+                          ? 'border-app-accent bg-app-active text-app-text'
+                          : 'border-app-border text-app-muted hover:text-app-text hover:bg-app-hover'
+                      }`}
+                    >
+                      Only matched
+                    </button>
+                    <button
+                      onClick={() => {
+                        setCompactPreferenceSet(true);
+                        setCompactFlowPreview((prev) => !prev);
+                      }}
+                      className={`px-2 py-1 text-[11px] rounded border ${
+                        compactFlowPreview
+                          ? 'border-app-accent bg-app-active text-app-text'
+                          : 'border-app-border text-app-muted hover:text-app-text hover:bg-app-hover'
+                      }`}
+                    >
+                      Compact
+                    </button>
+                  </div>
+                  <button
+                    onClick={() => setFlowLayout('horizontal')}
+                    className={`px-2 py-1 text-[11px] rounded border ${
+                      flowLayout === 'horizontal'
+                        ? 'border-app-accent bg-app-active text-app-text'
+                        : 'border-app-border text-app-muted hover:text-app-text hover:bg-app-hover'
+                    }`}
+                  >
+                    Horizontal
+                  </button>
+                  <button
+                    onClick={() => setFlowLayout('vertical')}
+                    className={`px-2 py-1 text-[11px] rounded border ${
+                      flowLayout === 'vertical'
+                        ? 'border-app-accent bg-app-active text-app-text'
+                        : 'border-app-border text-app-muted hover:text-app-text hover:bg-app-hover'
+                    }`}
+                  >
+                    Vertical
+                  </button>
+                  <button
+                    onClick={resetFlowLayout}
+                    className="px-2 py-1 text-[11px] rounded border border-app-border text-app-muted hover:text-app-text hover:bg-app-hover"
+                  >
+                    Reset
+                  </button>
+                </div>
+              </div>
+              <div className="border border-app-border rounded bg-app-bg p-3">
+                {flowPreviewRequests.length === 0 ? (
+                  <div className="text-sm text-app-muted">No flow preview yet.</div>
+                ) : (
+                  <div className={flowLayout === 'horizontal' ? 'overflow-x-auto' : 'overflow-y-auto'}>
+                    <div className={flowLayout === 'horizontal' ? 'flex items-start gap-4 min-w-max' : 'flex flex-col gap-4'}>
+                      {flowPreviewRequests.map((request, index) => {
+                        const label = formatFlowLabel(request);
+                        const isHighlighted = highlightedRequestId === request.id;
+                        const hasResponse = Boolean(
+                          request.responseStatusCode
+                          || request.responseBody
+                          || (request.responseHeaders && Object.keys(request.responseHeaders).length > 0),
+                        );
+                        const statusText = request.responseStatusCode
+                          ? String(request.responseStatusCode)
+                          : (hasResponse ? 'Response' : 'Pending');
+
+                        return (
+                          <div key={request.id} className={flowLayout === 'horizontal' ? 'flex items-center' : 'flex flex-col'}>
+                            <div className="space-y-2">
+                              <div className={`border rounded px-3 py-2 text-xs ${
+                                isHighlighted
+                                  ? 'border-app-accent bg-app-active'
+                                  : 'border-app-border bg-app-panel'
+                              }`}>
+                                <div className="flex items-center gap-2">
+                                  <span className="px-1.5 py-0.5 rounded bg-app-hover text-app-muted">REQ</span>
+                                  <span className="text-app-text font-medium">{request.method}</span>
+                                </div>
+                                <div className="mt-1 text-app-text truncate max-w-[200px]">{label.path}</div>
+                                {showHostInPreview && (
+                                  <div className="text-[11px] text-app-muted truncate max-w-[200px]">{label.host}</div>
+                                )}
+                              </div>
+                              <div className="border border-app-border rounded bg-app-panel px-3 py-2 text-xs">
+                                <div className="flex items-center gap-2">
+                                  <span className="px-1.5 py-0.5 rounded bg-app-hover text-app-muted">RES</span>
+                                  <span className={hasResponse ? 'text-app-text' : 'text-app-muted'}>{statusText}</span>
+                                </div>
+                                {request.responseTimestamp && (
+                                  <div className="mt-1 text-[11px] text-app-muted">
+                                    {new Date(request.responseTimestamp).toLocaleTimeString()}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                            {index < flowPreviewRequests.length - 1 && (
+                              flowLayout === 'horizontal' ? (
+                                <div className={compactFlowPreview ? 'flex items-center px-2' : 'flex items-center px-3'}>
+                                  <div className={`h-px ${compactFlowPreview ? 'w-6' : 'w-10'} ${statusEdgeClass(flowPreviewRequests[index + 1].responseStatusCode)}`} />
+                                  <div className={`ml-1 h-2 w-2 border-t border-r ${statusEdgeClass(flowPreviewRequests[index + 1].responseStatusCode)} rotate-45`} />
+                                </div>
+                              ) : (
+                                <div className={compactFlowPreview ? 'flex flex-col items-center py-2' : 'flex flex-col items-center py-3'}>
+                                  <div className={`w-px ${compactFlowPreview ? 'h-6' : 'h-10'} ${statusEdgeClass(flowPreviewRequests[index + 1].responseStatusCode)}`} />
+                                  <div className={`mt-1 h-2 w-2 border-b border-r ${statusEdgeClass(flowPreviewRequests[index + 1].responseStatusCode)} rotate-45`} />
+                                </div>
+                              )
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+              {flowPreviewEdges.length > 0 && (
+                <div className="border border-app-border rounded bg-app-bg px-3 py-2">
+                  <div className="text-[11px] text-app-muted uppercase tracking-wider">Flow edges</div>
+                  <div className="mt-2 space-y-1 text-xs">
+                    {flowPreviewEdges.map((edge) => {
+                      const fromLabel = formatFlowLabel(edge.from);
+                      const toLabel = formatFlowLabel(edge.to);
+                      const keyName = envKey || normalizeEnvKey(mappingValue || 'value');
+                      return (
+                        <div key={`${edge.from.id}-${edge.to.id}`} className="flex items-center gap-2 text-app-muted">
+                          <span className={`h-2 w-2 rounded-full ${statusEdgeClass(edge.to.responseStatusCode)}`} />
+                          <span className="text-app-text">{fromLabel.path}</span>
+                          <span className="text-app-muted">→</span>
+                          <span className="text-app-text">{toLabel.path}</span>
+                          <span className="px-1.5 py-0.5 rounded bg-app-hover text-app-muted">{`{{${keyName}}}`}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
           <div className="px-4 py-3 border-t border-app-border bg-app-sidebar flex items-center justify-end gap-2">

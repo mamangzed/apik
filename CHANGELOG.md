@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.3.1] - 2026-03-29
+
+### Added
+- Flow preview enhancements in intercept mapping: horizontal/vertical layouts, edge colors by response status, and global flow chaining
+- Flow preview controls: compact mode, show host, only matched, and reset layout
+- Rich flow tooltips (full URL, status, response time, payload size)
+
+### Changed
+- Flow preview layout preference now persists per user and collection
+
+### Fixed
+- Mapping modal source match list rendering and JSX corruption in intercept panel
+
+---
+
 ## [1.2.0] - 2026-03-29
 
 ### Added
@@ -73,7 +88,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-[Unreleased]: https://github.com/yourusername/apik/compare/v1.2.0...HEAD
-[1.2.0]: https://github.com/yourusername/apik/releases/tag/v1.2.0
-[1.1.1]: https://github.com/yourusername/apik/releases/tag/v1.1.1
-[1.1.0]: https://github.com/yourusername/apik/releases/tag/v1.1.0
+[Unreleased]: https://github.com/mamangzed/apik/compare/v1.3.1...HEAD
+[1.3.1]: https://github.com/mamangzed/apik/releases/tag/v1.3.1
+[1.2.0]: https://github.com/mamangzed/apik/releases/tag/v1.2.0
+[1.1.1]: https://github.com/mamangzed/apik/releases/tag/v1.1.1
+[1.1.0]: https://github.com/mamangzed/apik/releases/tag/v1.1.0
