@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useAppStore } from '../../store';
-import { RequestHistoryEntry, ResponseTab } from '../../types';
+import { CollectionRunAssertion, RequestHistoryEntry, ResponseTab } from '../../types';
 import { getStatusColor, formatBytes, formatTime, detectLanguage, prettyPrint, canBeautifyContent } from '../../utils/format';
 import { Copy, Download, Search, Wand2, RotateCcw, Trash2, FlaskConical, BookPlus } from 'lucide-react';
 import Editor from '@monaco-editor/react';
@@ -19,6 +19,7 @@ export default function ResponseViewer() {
     tabs,
     activeTabId,
     responses,
+    postRequestAssertions,
     loadingTabs,
     requestHistory,
     replayHistoryEntry,
@@ -35,6 +36,7 @@ export default function ResponseViewer() {
   const activeTabData = tabs.find((t) => t.id === activeTabId);
   const isLoading = activeTabId ? loadingTabs.has(activeTabId) : false;
   const response = activeTabId ? responses[activeTabId] : undefined;
+  const assertions = activeTabId ? postRequestAssertions[activeTabId] || [] : [];
 
   const contentType = response?.headers?.['content-type'] || '';
   const language = detectLanguage(contentType, response?.body || '');
@@ -175,6 +177,8 @@ export default function ResponseViewer() {
   const cookies = Object.entries(response.headers)
     .filter(([k]) => k.toLowerCase() === 'set-cookie')
     .map(([, v]) => v);
+  const passedAssertions = assertions.filter((item) => item.passed).length;
+  const failedAssertions = assertions.length - passedAssertions;
 
   return (
     <div className="flex flex-col h-full overflow-hidden bg-app-bg">
@@ -276,6 +280,22 @@ export default function ResponseViewer() {
         )}
       </div>
 
+      {assertions.length > 0 && (
+        <div className="border-b border-app-border bg-app-panel px-3 py-2 flex-shrink-0">
+          <div className="flex items-center justify-between text-xs mb-2">
+            <span className="text-app-text font-medium">Post-request Assertions</span>
+            <span className={failedAssertions > 0 ? 'text-red-400' : 'text-green-400'}>
+              {passedAssertions}/{assertions.length} passed
+            </span>
+          </div>
+          <div className="max-h-28 overflow-y-auto space-y-1 pr-1">
+            {assertions.map((assertion, index) => (
+              <AssertionRow key={`${assertion.name}-${index}`} assertion={assertion} />
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Content */}
       <div className="flex-1 overflow-hidden">
         {activeTab === 'body' && (
@@ -295,6 +315,26 @@ export default function ResponseViewer() {
               padding: { top: 8 },
               automaticLayout: true,
             }}
+
+            function AssertionRow({ assertion }: { assertion: CollectionRunAssertion }) {
+              return (
+                <div
+                  className={`rounded border px-2 py-1 text-xs ${
+                    assertion.passed
+                      ? 'border-emerald-900/60 bg-emerald-950/20 text-emerald-300'
+                      : 'border-red-900/60 bg-red-950/20 text-red-300'
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="font-medium truncate">{assertion.name}</span>
+                    <span className="uppercase tracking-wide text-[10px]">{assertion.passed ? 'pass' : 'fail'}</span>
+                  </div>
+                  {!assertion.passed && assertion.error && (
+                    <p className="mt-1 text-red-200/90 break-words">{assertion.error}</p>
+                  )}
+                </div>
+              );
+            }
           />
         )}
 

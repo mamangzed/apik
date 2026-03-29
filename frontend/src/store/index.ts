@@ -23,6 +23,7 @@ import {
 import { apiClient } from '../lib/apiClient';
 import { sendRequestWithSmartTransport } from '../lib/requestTransport';
 import { getWsInterceptUrl } from '../lib/runtimeConfig';
+import { executeApikScript, ScriptRuntimeRequest } from '../lib/scriptRuntime';
 import { ImportSourceFormat } from '../lib/collectionTransfer';
 import {
   clearLocalData,
@@ -151,6 +152,7 @@ interface AppState {
   tabs: AppTab[];
   activeTabId: string | null;
   responses: Record<string, ProxyResponse>;
+  postRequestAssertions: Record<string, CollectionRunAssertion[]>;
   loadingTabs: Set<string>;
   interceptEnabled: boolean;
   interceptedRequests: InterceptedRequest[];
@@ -361,65 +363,109 @@ function shouldRetryStatus(status: number, retryStatuses: number[]): boolean {
   return retryStatuses.includes(status);
 }
 
-function buildAssertionApi(response: ProxyResponse, assertions: CollectionRunAssertion[]) {
-  const expect = (actual: unknown) => ({
-    toBe(expected: unknown) {
-      if (actual !== expected) {
-        throw new Error(`Expected ${String(actual)} to be ${String(expected)}`);
-      }
-    },
-    toContain(expected: string) {
-      const text = String(actual ?? '');
-      if (!text.includes(expected)) {
-        throw new Error(`Expected value to contain ${expected}`);
-      }
-    },
-    toEqual(expected: unknown) {
-      const left = JSON.stringify(actual);
-      const right = JSON.stringify(expected);
-      if (left !== right) {
-        throw new Error(`Expected ${left} to equal ${right}`);
-      }
-    },
+function buildEnvironmentValueMap(environment: Environment | null): Record<string, string> {
+  if (!environment) {
+    return {};
+  }
+
+  const map: Record<string, string> = {};
+  environment.variables.forEach((variable) => {
+    if (variable.enabled && variable.key) {
+      map[variable.key] = variable.value;
+    }
   });
 
-  return {
-    response,
-    expect,
-    test(name: string, callback: () => void) {
-      try {
-        callback();
-        assertions.push({ name, passed: true });
-      } catch (error) {
-        assertions.push({
-          name,
-          passed: false,
-          error: error instanceof Error ? error.message : 'Assertion failed',
-        });
-      }
-    },
-  };
+  return map;
 }
 
-function executeRequestTests(script: string | undefined, response: ProxyResponse): CollectionRunAssertion[] {
-  if (!script || !script.trim()) {
-    return [];
+function resolveWithMap(text: string, values: Record<string, string>): string {
+  return text.replace(/\{\{([^}]+)\}\}/g, (match, key) => {
+    const trimmed = String(key).trim();
+    if (!Object.prototype.hasOwnProperty.call(values, trimmed)) {
+      return match;
+    }
+    return values[trimmed] || '';
+  });
+}
+
+function buildRequestPayload(
+  request: ApiRequest,
+  resolveVariables: (text: string) => string,
+): ScriptRuntimeRequest {
+  const searchParams = new URLSearchParams();
+  request.params.filter((param) => param.enabled && param.key).forEach((param) => {
+    searchParams.append(resolveVariables(param.key), resolveVariables(param.value));
+  });
+
+  let url = resolveVariables(request.url);
+  const queryString = searchParams.toString();
+  if (queryString) {
+    url += (url.includes('?') ? '&' : '?') + queryString;
   }
 
-  const assertions: CollectionRunAssertion[] = [];
-  try {
-    const apix = buildAssertionApi(response, assertions);
-    const runner = new Function('apix', script);
-    runner(apix);
-  } catch (error) {
-    assertions.push({
-      name: 'Script execution',
-      passed: false,
-      error: error instanceof Error ? error.message : 'Script execution failed',
-    });
+  const headers: Record<string, string> = {};
+  request.headers.filter((header) => header.enabled && header.key).forEach((header) => {
+    headers[resolveVariables(header.key)] = resolveVariables(header.value);
+  });
+
+  if (request.auth.type === 'bearer' && request.auth.token) {
+    headers.Authorization = `Bearer ${resolveVariables(request.auth.token)}`;
+  } else if (request.auth.type === 'basic' && request.auth.username) {
+    headers.Authorization = `Basic ${btoa(`${request.auth.username}:${request.auth.password || ''}`)}`;
+  } else if (request.auth.type === 'api-key' && request.auth.key) {
+    const key = resolveVariables(request.auth.key);
+    const value = resolveVariables(request.auth.value || '');
+    if (request.auth.addTo === 'query') {
+      try {
+        const urlObject = new URL(url);
+        urlObject.searchParams.set(key, value);
+        url = urlObject.toString();
+      } catch {
+        const params = new URLSearchParams(url.includes('?') ? url.split('?')[1] : '');
+        params.set(key, value);
+        const base = url.split('?')[0];
+        const nextQuery = params.toString();
+        url = nextQuery ? `${base}?${nextQuery}` : base;
+      }
+    } else {
+      headers[key] = value;
+    }
   }
 
-  return assertions;
+  let body: string | null = null;
+  if (!['GET', 'HEAD', 'OPTIONS'].includes(request.method)) {
+    if (request.body.type === 'json') {
+      body = resolveVariables(request.body.content);
+      if (!headers['Content-Type']) headers['Content-Type'] = 'application/json';
+    } else if (request.body.type === 'xml') {
+      body = resolveVariables(request.body.content);
+      if (!headers['Content-Type']) headers['Content-Type'] = 'application/xml';
+    } else if (request.body.type === 'text') {
+      body = resolveVariables(request.body.content);
+      if (!headers['Content-Type']) headers['Content-Type'] = 'text/plain';
+    } else if (request.body.type === 'form-urlencoded') {
+      const formData = new URLSearchParams();
+      (request.body.formData || []).filter((entry) => entry.enabled && entry.key).forEach((entry) => {
+        formData.append(resolveVariables(entry.key), resolveVariables(entry.value));
+      });
+      body = formData.toString();
+      if (!headers['Content-Type']) headers['Content-Type'] = 'application/x-www-form-urlencoded';
+    } else if (request.body.type === 'graphql') {
+      try {
+        body = JSON.stringify(JSON.parse(resolveVariables(request.body.content || '{}')));
+      } catch {
+        body = resolveVariables(request.body.content);
+      }
+      if (!headers['Content-Type']) headers['Content-Type'] = 'application/json';
+    }
+  }
+
+  return {
+    method: request.method,
+    url,
+    headers,
+    body,
+  };
 }
 
 async function loadCollectionsByMode(storageMode: StorageMode): Promise<Collection[]> {
@@ -485,6 +531,7 @@ export const useAppStore = create<AppState>()(
     tabs: initialDraftState.tabs,
     activeTabId: initialDraftState.activeTabId,
     responses: {},
+    postRequestAssertions: {},
     loadingTabs: new Set(),
     interceptEnabled: false,
     interceptedRequests: [],
@@ -1233,6 +1280,8 @@ export const useAppStore = create<AppState>()(
           return;
         }
         state.tabs.splice(index, 1);
+        delete state.responses[tabId];
+        delete state.postRequestAssertions[tabId];
         if (state.pendingCloseTabId === tabId) {
           state.pendingCloseTabId = null;
         }
@@ -1343,40 +1392,147 @@ export const useAppStore = create<AppState>()(
         throw new Error('Collection not found');
       }
 
+      const resolveVariables = (text: string) => {
+        const stateResolver = get().resolveVariables;
+        const resolvedByState = stateResolver(text);
+        return resolvedByState;
+      };
+
+      const persistEnvironmentValues = async (values: Record<string, string>) => {
+        const activeEnvironmentId = get().activeEnvironmentId;
+        if (!activeEnvironmentId) {
+          return;
+        }
+
+        const activeEnvironment = get().environments.find((env) => env.id === activeEnvironmentId);
+        if (!activeEnvironment) {
+          return;
+        }
+
+        const currentMap = buildEnvironmentValueMap(activeEnvironment);
+        const currentKeys = Object.keys(currentMap);
+        const nextKeys = Object.keys(values);
+        const sameShape = currentKeys.length === nextKeys.length && currentKeys.every((key) => values[key] === currentMap[key]);
+        if (sameShape) {
+          return;
+        }
+
+        const originalEnabledKeys = new Set(activeEnvironment.variables.filter((item) => item.enabled && item.key).map((item) => item.key));
+        const nextVariables = activeEnvironment.variables
+          .filter((item) => !(originalEnabledKeys.has(item.key) && !Object.prototype.hasOwnProperty.call(values, item.key)))
+          .map((item) => {
+            if (!item.key) {
+              return item;
+            }
+
+            if (!Object.prototype.hasOwnProperty.call(values, item.key)) {
+              return item;
+            }
+
+            return {
+              ...item,
+              value: values[item.key],
+              initialValue: values[item.key],
+              enabled: true,
+            };
+          });
+
+        Object.entries(values).forEach(([key, value]) => {
+          if (!nextVariables.some((item) => item.key === key)) {
+            nextVariables.push({
+              id: uuidv4(),
+              key,
+              value,
+              initialValue: value,
+              enabled: true,
+            });
+          }
+        });
+
+        const updatedEnvironment: Environment = {
+          ...activeEnvironment,
+          variables: nextVariables,
+          updatedAt: new Date().toISOString(),
+        };
+
+        set((state) => {
+          const index = state.environments.findIndex((env) => env.id === activeEnvironment.id);
+          if (index !== -1) {
+            state.environments[index] = updatedEnvironment;
+          }
+        });
+
+        try {
+          if (get().storageMode === 'remote') {
+            await apiClient.put<Environment>(`/environments/${updatedEnvironment.id}`, prepareEnvironmentForPersistence(updatedEnvironment));
+          } else {
+            saveEnvironmentsLocal(get().environments);
+          }
+        } catch {
+          // Non-blocking persistence for script-driven variable updates.
+        }
+      };
+
       const startedAt = new Date().toISOString();
       const results: CollectionRunItemResult[] = [];
+      let runtimeEnvironmentValues = buildEnvironmentValueMap(get().getActiveEnvironment());
 
       for (const request of collection.requests) {
         const runStart = Date.now();
         let response: ProxyResponse;
+        let assertions: CollectionRunAssertion[] = [];
 
         try {
-          const headers: Record<string, string> = {};
-          request.headers.filter((header) => header.enabled && header.key).forEach((header) => {
-            headers[header.key] = header.value;
+          let payload = buildRequestPayload(request, (text) => resolveWithMap(resolveVariables(text), runtimeEnvironmentValues));
+
+          const preResult = await executeApikScript({
+            stage: 'pre-request',
+            script: request.preRequestScript,
+            request: payload,
+            environmentValues: runtimeEnvironmentValues,
+            collectAssertions: false,
           });
 
-          let body: string | null = null;
-          if (!['GET', 'HEAD', 'OPTIONS'].includes(request.method)) {
-            if (request.body.type === 'json') {
-              body = request.body.content;
-              if (!headers['Content-Type']) headers['Content-Type'] = 'application/json';
-            } else if (request.body.type === 'xml') {
-              body = request.body.content;
-              if (!headers['Content-Type']) headers['Content-Type'] = 'application/xml';
-            } else if (request.body.type === 'text') {
-              body = request.body.content;
-              if (!headers['Content-Type']) headers['Content-Type'] = 'text/plain';
-            }
+          runtimeEnvironmentValues = preResult.environmentValues;
+          await persistEnvironmentValues(runtimeEnvironmentValues);
+
+          if (preResult.error) {
+            throw new Error(`Pre-request script failed: ${preResult.error}`);
           }
 
+          payload = preResult.request;
+
           response = await sendRequestWithSmartTransport({
-            method: request.method,
-            url: request.url,
-            headers,
-            body,
+            method: payload.method,
+            url: payload.url,
+            headers: payload.headers,
+            body: payload.body,
             timeout: 30000,
           });
+
+          const postResult = await executeApikScript({
+            stage: 'post-request',
+            script: request.testScript,
+            request: payload,
+            response,
+            environmentValues: runtimeEnvironmentValues,
+            collectAssertions: true,
+          });
+
+          runtimeEnvironmentValues = postResult.environmentValues;
+          await persistEnvironmentValues(runtimeEnvironmentValues);
+          assertions = postResult.assertions;
+
+          if (postResult.error) {
+            assertions = [
+              ...assertions,
+              {
+                name: 'Post-request script',
+                passed: false,
+                error: postResult.error,
+              },
+            ];
+          }
         } catch (error) {
           response = {
             status: 0,
@@ -1387,9 +1543,14 @@ export const useAppStore = create<AppState>()(
             time: Date.now() - runStart,
             error: error instanceof Error ? error.message : 'Request failed',
           };
+          assertions = [
+            {
+              name: 'Request execution',
+              passed: false,
+              error: response.error || 'Request failed',
+            },
+          ];
         }
-
-        const assertions = executeRequestTests(request.testScript, response);
         const passed = assertions.every((assertion) => assertion.passed) && !response.error;
 
         results.push({
@@ -1611,63 +1772,106 @@ export const useAppStore = create<AppState>()(
       const requestSnapshot = cloneJson(request);
       set((state) => {
         state.loadingTabs.add(tabId);
+        state.postRequestAssertions[tabId] = [];
       });
 
       let resolvedUrlForHistory = request.url;
 
-      try {
-        const searchParams = new URLSearchParams();
-        request.params.filter((param) => param.enabled && param.key).forEach((param) => {
-          searchParams.append(resolveVariables(param.key), resolveVariables(param.value));
-        });
-
-        let url = resolveVariables(request.url);
-        const queryString = searchParams.toString();
-        if (queryString) {
-          url += (url.includes('?') ? '&' : '?') + queryString;
-        }
-        resolvedUrlForHistory = url;
-
-        const headers: Record<string, string> = {};
-        request.headers.filter((header) => header.enabled && header.key).forEach((header) => {
-          headers[resolveVariables(header.key)] = resolveVariables(header.value);
-        });
-
-        if (request.auth.type === 'bearer' && request.auth.token) {
-          headers.Authorization = `Bearer ${resolveVariables(request.auth.token)}`;
-        } else if (request.auth.type === 'basic' && request.auth.username) {
-          headers.Authorization = `Basic ${btoa(`${request.auth.username}:${request.auth.password || ''}`)}`;
-        } else if (request.auth.type === 'api-key' && request.auth.key && request.auth.addTo === 'header') {
-          headers[request.auth.key] = resolveVariables(request.auth.value || '');
+      const persistEnvironmentValues = async (values: Record<string, string>) => {
+        const activeEnvironmentId = get().activeEnvironmentId;
+        if (!activeEnvironmentId) {
+          return;
         }
 
-        let body: string | null = null;
-        if (!['GET', 'HEAD', 'OPTIONS'].includes(request.method)) {
-          if (request.body.type === 'json') {
-            body = resolveVariables(request.body.content);
-            if (!headers['Content-Type']) headers['Content-Type'] = 'application/json';
-          } else if (request.body.type === 'xml') {
-            body = request.body.content;
-            if (!headers['Content-Type']) headers['Content-Type'] = 'application/xml';
-          } else if (request.body.type === 'text') {
-            body = request.body.content;
-            if (!headers['Content-Type']) headers['Content-Type'] = 'text/plain';
-          } else if (request.body.type === 'form-urlencoded') {
-            const formData = new URLSearchParams();
-            (request.body.formData || []).filter((entry) => entry.enabled && entry.key).forEach((entry) => {
-              formData.append(entry.key, entry.value);
-            });
-            body = formData.toString();
-            if (!headers['Content-Type']) headers['Content-Type'] = 'application/x-www-form-urlencoded';
-          } else if (request.body.type === 'graphql') {
-            try {
-              body = JSON.stringify(JSON.parse(request.body.content || '{}'));
-            } catch {
-              body = request.body.content;
+        const activeEnvironment = get().environments.find((env) => env.id === activeEnvironmentId);
+        if (!activeEnvironment) {
+          return;
+        }
+
+        const currentMap = buildEnvironmentValueMap(activeEnvironment);
+        const currentKeys = Object.keys(currentMap);
+        const nextKeys = Object.keys(values);
+        const sameShape = currentKeys.length === nextKeys.length && currentKeys.every((key) => values[key] === currentMap[key]);
+        if (sameShape) {
+          return;
+        }
+
+        const originalEnabledKeys = new Set(activeEnvironment.variables.filter((item) => item.enabled && item.key).map((item) => item.key));
+        const nextVariables = activeEnvironment.variables
+          .filter((item) => !(originalEnabledKeys.has(item.key) && !Object.prototype.hasOwnProperty.call(values, item.key)))
+          .map((item) => {
+            if (!item.key) {
+              return item;
             }
-            if (!headers['Content-Type']) headers['Content-Type'] = 'application/json';
+
+            if (!Object.prototype.hasOwnProperty.call(values, item.key)) {
+              return item;
+            }
+
+            return {
+              ...item,
+              value: values[item.key],
+              initialValue: values[item.key],
+              enabled: true,
+            };
+          });
+
+        Object.entries(values).forEach(([key, value]) => {
+          if (!nextVariables.some((item) => item.key === key)) {
+            nextVariables.push({
+              id: uuidv4(),
+              key,
+              value,
+              initialValue: value,
+              enabled: true,
+            });
           }
+        });
+
+        const updatedEnvironment: Environment = {
+          ...activeEnvironment,
+          variables: nextVariables,
+          updatedAt: new Date().toISOString(),
+        };
+
+        set((state) => {
+          const index = state.environments.findIndex((env) => env.id === activeEnvironment.id);
+          if (index !== -1) {
+            state.environments[index] = updatedEnvironment;
+          }
+        });
+
+        try {
+          if (get().storageMode === 'remote') {
+            await apiClient.put<Environment>(`/environments/${updatedEnvironment.id}`, prepareEnvironmentForPersistence(updatedEnvironment));
+          } else {
+            saveEnvironmentsLocal(get().environments);
+          }
+        } catch {
+          // Non-blocking persistence for script-driven variable updates.
         }
+      };
+
+      try {
+        const initialEnvironmentValues = buildEnvironmentValueMap(get().getActiveEnvironment());
+        const basePayload = buildRequestPayload(request, (text) => resolveWithMap(resolveVariables(text), initialEnvironmentValues));
+
+        const preResult = await executeApikScript({
+          stage: 'pre-request',
+          script: request.preRequestScript,
+          request: basePayload,
+          environmentValues: initialEnvironmentValues,
+          collectAssertions: false,
+        });
+
+        if (preResult.error) {
+          throw new Error(`Pre-request script failed: ${preResult.error}`);
+        }
+
+        await persistEnvironmentValues(preResult.environmentValues);
+
+        const scriptReadyPayload = preResult.request;
+        resolvedUrlForHistory = scriptReadyPayload.url;
 
         const policy = request.retryPolicy || {
           retries: 0,
@@ -1689,10 +1893,10 @@ export const useAppStore = create<AppState>()(
         for (let attempt = 0; attempt <= Math.max(0, policy.retries || 0); attempt += 1) {
           try {
             const current = await sendRequestWithSmartTransport({
-              method: request.method,
-              url,
-              headers,
-              body,
+              method: scriptReadyPayload.method,
+              url: scriptReadyPayload.url,
+              headers: scriptReadyPayload.headers,
+              body: scriptReadyPayload.body,
               timeout: 30000,
             });
 
@@ -1714,6 +1918,36 @@ export const useAppStore = create<AppState>()(
 
         if (!data) {
           throw lastError || new Error('Request failed');
+        }
+
+        const postResult = await executeApikScript({
+          stage: 'post-request',
+          script: request.testScript,
+          request: scriptReadyPayload,
+          response: data,
+          environmentValues: preResult.environmentValues,
+          collectAssertions: true,
+        });
+
+        set((state) => {
+          state.postRequestAssertions[tabId] = postResult.assertions;
+        });
+
+        await persistEnvironmentValues(postResult.environmentValues);
+
+        const failedAssertions = postResult.assertions.filter((assertion) => !assertion.passed);
+        if (postResult.error || failedAssertions.length > 0) {
+          const parts: string[] = [];
+          if (failedAssertions.length > 0) {
+            parts.push(`Post-request assertions failed: ${failedAssertions.length}/${postResult.assertions.length}`);
+          }
+          if (postResult.error) {
+            parts.push(`Post-request script error: ${postResult.error}`);
+          }
+          data = {
+            ...data,
+            error: parts.join(' | '),
+          };
         }
 
         if (data.status >= 200 && data.status < 400) {
@@ -1758,6 +1992,7 @@ export const useAppStore = create<AppState>()(
         };
         set((state) => {
           state.responses[tabId] = errorResponse;
+          state.postRequestAssertions[tabId] = [];
           state.requestHistory.unshift({
             id: uuidv4(),
             tabId,

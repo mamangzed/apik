@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.2.0] - 2026-03-29
+
+### Added
+- New `apik` scripting runtime for pre-request and post-request scripts
+- Rich scripting helpers: `apik.env`, `apik.request`, `apik.response`, `apik.test`, `apik.expect`
+- Post-request assertion summary in response viewer (pass/fail with error detail)
+- Dedicated scripting documentation in `SCRIPTING.md`
+
+### Changed
+- Script editor examples now use `apik` naming and clearer pre/post request usage
+- Request tabs now label script phase as `Post-Request` for better UX clarity
+- Version bumped to `1.2.0` (root, frontend, backend)
+
+### Fixed
+- Query param mutation in script runtime now safely supports relative URLs
+- Better script execution flow consistency between single send and collection run
+
+---
+
 ## [1.1.1] - 2026-03-25
 
 ### Added
@@ -54,6 +73,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-[Unreleased]: https://github.com/yourusername/apik/compare/v1.1.1...HEAD
+[Unreleased]: https://github.com/yourusername/apik/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/yourusername/apik/releases/tag/v1.2.0
 [1.1.1]: https://github.com/yourusername/apik/releases/tag/v1.1.1
 [1.1.0]: https://github.com/yourusername/apik/releases/tag/v1.1.0

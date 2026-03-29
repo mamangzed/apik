@@ -201,6 +201,7 @@ Full tutorial:
 
 ## Documentation Index
 
+- [SCRIPTING.md](SCRIPTING.md): Pre-request and post-request scripting API (`apik` runtime)
 - [DOCKER_DEPLOY.md](DOCKER_DEPLOY.md): Docker install + server deploy (manual and script)
 - [SETUP_SECRETS.md](SETUP_SECRETS.md): Clerk, Supabase, GitHub secrets
 - [CONTRIBUTING.md](CONTRIBUTING.md): Contribution guide

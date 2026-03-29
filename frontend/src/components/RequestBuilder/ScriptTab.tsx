@@ -6,23 +6,37 @@ interface ScriptTabProps {
 }
 
 const PRE_SCRIPT_EXAMPLE = `// Pre-request Script
-// Available: apix.env, apix.request
-// Example: set a variable
-// apix.env.set("timestamp", Date.now().toString());
+// Available: apik.env, apik.request, apik.log
+// Example: timestamp + dynamic auth header
+const now = new Date().toISOString();
+apik.env.set('request_time', now);
+
+const token = apik.env.get('token');
+if (token) {
+  apik.request.setHeader('Authorization', `Bearer \${token}`);
+}
+
+// You can mutate URL/query too:
+// apik.request.setQueryParam('ts', Date.now().toString());
+apik.log('Pre-request executed at', now);
 
 `;
 
-const TEST_SCRIPT_EXAMPLE = `// Test Script
-// Available: apix.response, apix.test, apix.expect
+const TEST_SCRIPT_EXAMPLE = `// Post-request Script
+// Available: apik.response, apik.test, apik.expect, apik.env
 
-// apix.test("Status is 200", () => {
-//   apix.expect(apix.response.status).toBe(200);
-// });
+apik.test('Status is 200', () => {
+  apik.expect(apik.response.status).toBe(200);
+});
 
-// apix.test("Response has data", () => {
-//   const body = JSON.parse(apix.response.body);
-//   apix.expect(body.data).toBeDefined();
-// });
+apik.test('Response time under 1200ms', () => {
+  apik.expect(apik.response.time).toBeLessThan(1200);
+});
+
+const json = apik.response.json();
+if (json?.data?.token) {
+  apik.env.set('last_api_token', json.data.token);
+}
 
 `;
 
@@ -43,7 +57,7 @@ export default function ScriptTab({ type }: ScriptTabProps) {
   return (
     <div className="flex flex-col h-full overflow-hidden">
       <div className="px-3 py-2 border-b border-app-border bg-app-sidebar text-xs text-app-muted flex items-center justify-between flex-shrink-0">
-        <span>{type === 'pre' ? 'Pre-Request Script' : 'Test Script'}</span>
+        <span>{type === 'pre' ? 'Pre-Request Script' : 'Post-Request Script'}</span>
         <span className="text-app-muted/50">JavaScript</span>
       </div>
       <div className="flex-1 overflow-hidden">

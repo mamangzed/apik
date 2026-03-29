@@ -15,7 +15,7 @@ const TABS: { id: RequestTab; label: string }[] = [
   { id: 'body', label: 'Body' },
   { id: 'auth', label: 'Auth' },
   { id: 'pre-script', label: 'Pre-Request' },
-  { id: 'test-script', label: 'Tests' },
+  { id: 'test-script', label: 'Post-Request' },
   { id: 'docs', label: 'Docs' },
 ];
 
