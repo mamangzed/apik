@@ -36,6 +36,13 @@ export default function ShareModal() {
   }
 
   const share = collection.sharing[shareModalTarget];
+  
+  // Form sharing requires enabled form with fields; docs/collections have no special requirements
+  const isFormTarget = shareModalTarget === 'form';
+  const hasPublicFormReadyRequest = isFormTarget
+    ? collection.requests.some((request) => Boolean(request.formConfig?.enabled && (request.formConfig.fields || []).length > 0))
+    : true;
+  
   const members = collection.collaborators || [];
   const canManageMembers =
     storageMode === 'remote' &&
@@ -101,6 +108,11 @@ export default function ShareModal() {
   }, [loadCollectionMembers, shareModalCollectionId, storageMode]);
 
   const handleChange = async (access: 'private' | 'public') => {
+    if (shareModalTarget === 'form' && access === 'public' && !hasPublicFormReadyRequest) {
+      toast.error('Enable form and add at least one field on a request before sharing a public form link');
+      return;
+    }
+
     const updated = await updateCollectionShareAccess(collection.id, shareModalTarget, access);
     if (updated.sharing[shareModalTarget].access === 'public') {
       toast.success('Share link ready');
@@ -184,6 +196,14 @@ export default function ShareModal() {
 
           <div className="space-y-2">
             <label className="text-xs uppercase tracking-wider text-app-muted">Share link</label>
+            {shareModalTarget === 'form' && !hasPublicFormReadyRequest && (
+              <div className="space-y-2 rounded border border-amber-600/40 bg-amber-900/20 p-2">
+                <p className="text-[11px] text-amber-200 font-medium">⚠️ Form Not Ready to Share</p>
+                <p className="text-[11px] text-amber-300/90 leading-relaxed">
+                  To share a public form, enable form mode on at least one request and add field(s) in the <strong>Request Form Interface</strong> section. Header/custom fields can be configured there without being part of the form input.
+                </p>
+              </div>
+            )}
             <div className="flex gap-2">
               <input
                 readOnly

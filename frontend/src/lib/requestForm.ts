@@ -176,19 +176,6 @@ function defaultTokenPath(responseBody: string): string {
 export function createAutoFormConfigFromRequest(request: ApiRequest): RequestFormConfig {
   const fields: RequestFormField[] = [];
 
-  request.params
-    .filter((param) => param.enabled && param.key)
-    .forEach((param) => fields.push(createField('param', param.key, inferFieldTypeFromKey(param.key))));
-
-  request.headers
-    .filter((header) => header.enabled && header.key)
-    .forEach((header) => {
-      if (header.key.toLowerCase() === 'authorization') {
-        return;
-      }
-      fields.push(createField('header', header.key, inferFieldTypeFromKey(header.key)));
-    });
-
   if (request.body.type === 'json') {
     parseJsonBodyFieldPaths(request.body.content).forEach((path) => {
       fields.push(createField('body-json', path, inferFieldTypeFromKey(path)));
@@ -199,17 +186,6 @@ export function createAutoFormConfigFromRequest(request: ApiRequest): RequestFor
     (request.body.formData || [])
       .filter((entry) => entry.enabled && entry.key)
       .forEach((entry) => fields.push(createField('body-form', entry.key, inferFieldTypeFromKey(entry.key))));
-  }
-
-  if (request.auth.type === 'bearer') {
-    fields.push(createField('auth-token', 'token', 'password'));
-  }
-  if (request.auth.type === 'basic') {
-    fields.push(createField('auth-username', 'username', 'text'));
-    fields.push(createField('auth-password', 'password', 'password'));
-  }
-  if (request.auth.type === 'api-key') {
-    fields.push(createField('auth-api-key-value', request.auth.key || 'api_key', 'password'));
   }
 
   return {

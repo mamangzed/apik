@@ -130,9 +130,11 @@ export default function PublicDocsPage() {
               return;
             }
             const initial: Record<string, string> = {};
-            (request.formConfig.fields || []).forEach((field) => {
+            (request.formConfig.fields || [])
+              .filter((field) => field.target === 'body-json' || field.target === 'body-form')
+              .forEach((field) => {
               initial[field.name] = field.defaultValue || '';
-            });
+              });
             next[request.id] = initial;
           });
           return next;
@@ -226,7 +228,9 @@ export default function PublicDocsPage() {
                     <div className="rounded border border-app-border p-3 bg-app-active/20 space-y-3">
                       <p className="text-xs text-app-muted">Fillable HTML form generated from endpoint configuration.</p>
                       {Object.entries(
-                        (request.formConfig.fields || []).reduce<Record<string, RequestFormField[]>>((acc, field) => {
+                        (request.formConfig.fields || [])
+                          .filter((field) => field.target === 'body-json' || field.target === 'body-form')
+                          .reduce<Record<string, RequestFormField[]>>((acc, field) => {
                           const currentValues = formValuesByRequest[request.id] || {};
                           if (!isFieldVisible(field, currentValues)) {
                             return acc;
@@ -238,7 +242,7 @@ export default function PublicDocsPage() {
                           }
                           acc[group].push(field);
                           return acc;
-                        }, {}),
+                          }, {}),
                       ).map(([groupName, groupedFields]) => (
                         <div key={`${request.id}-${groupName}`} className="space-y-2">
                           <p className="text-[11px] uppercase tracking-wider text-app-muted">{groupName}</p>

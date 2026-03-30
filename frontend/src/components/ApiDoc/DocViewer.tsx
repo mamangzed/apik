@@ -108,7 +108,20 @@ function RequestDoc({
   collectionId: string;
   onDeleteExample: (collectionId: string, requestId: string, index: number) => Promise<void>;
 }) {
-  const [formValues, setFormValues] = useState<Record<string, string>>(() => getInitialFormValues(request));
+  const bodyOnlyFields = (request.formConfig?.fields || []).filter(
+    (field) => field.target === 'body-json' || field.target === 'body-form',
+  );
+  const [formValues, setFormValues] = useState<Record<string, string>>(() =>
+    getInitialFormValues({
+      ...request,
+      formConfig: request.formConfig
+        ? {
+            ...request.formConfig,
+            fields: bodyOnlyFields,
+          }
+        : request.formConfig,
+    }),
+  );
 
   const copyUrl = async () => {
     await navigator.clipboard.writeText(request.url);
@@ -122,7 +135,7 @@ function RequestDoc({
     }));
   };
 
-  const groupedFields = groupVisibleFields(request.formConfig?.fields || [], formValues);
+  const groupedFields = groupVisibleFields(bodyOnlyFields, formValues);
 
   return (
     <div className="border border-app-border rounded-lg overflow-hidden">

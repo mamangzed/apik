@@ -1,5 +1,8 @@
 import { useEffect, useState } from 'react';
-import { ArrowDown, ArrowUp, Download, Plus, RotateCcw, Share2, Sparkles, Trash2, Upload } from 'lucide-react';
+import { ArrowDown, ArrowUp, Download, GripVertical, Plus, RotateCcw, Share2, Sparkles, Trash2, Upload } from 'lucide-react';
+import { closestCenter, DndContext, DragEndEvent, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
+import { arrayMove, horizontalListSortingStrategy, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { useAppStore } from '../../store';
 import { createAutoFormConfigFromRequest } from '../../lib/requestForm';
 import { RequestFormConfig, RequestFormField, RequestFormFieldTarget, RequestFormFieldType, RequestFormTemplate } from '../../types';
@@ -317,11 +320,88 @@ function createPaletteField(type: RequestFormFieldType): RequestFormField {
   });
 }
 
+function SortableGroupChip({
+  groupName,
+  onMoveUp,
+  onMoveDown,
+}: {
+  groupName: string;
+  onMoveUp: () => void;
+  onMoveDown: () => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: groupName });
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+      }}
+      className={`inline-flex items-center gap-1 border border-app-border rounded px-2 py-1 text-xs text-app-text bg-app-bg ${isDragging ? 'opacity-70' : ''}`}
+      title="Drag and drop to reorder this group"
+    >
+      <button
+        type="button"
+        className="text-app-muted hover:text-app-text cursor-grab active:cursor-grabbing"
+        title="Drag to reorder group"
+        {...attributes}
+        {...listeners}
+      >
+        <GripVertical size={12} />
+      </button>
+      <span>{groupName}</span>
+      <button
+        type="button"
+        title="Move group up"
+        onClick={onMoveUp}
+        className="text-app-muted hover:text-app-text"
+      >
+        <ArrowUp size={12} />
+      </button>
+      <button
+        type="button"
+        title="Move group down"
+        onClick={onMoveDown}
+        className="text-app-muted hover:text-app-text"
+      >
+        <ArrowDown size={12} />
+      </button>
+    </div>
+  );
+}
+
+function SortableFieldShell({ fieldId, children }: { fieldId: string; children: React.ReactNode }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: fieldId });
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+      }}
+      className={`border border-app-border rounded p-3 bg-app-bg/60 ${isDragging ? 'opacity-70' : ''}`}
+    >
+      <div className="mb-2 flex items-center justify-end">
+        <button
+          type="button"
+          className="inline-flex items-center gap-1 text-[11px] text-app-muted hover:text-app-text cursor-grab active:cursor-grabbing"
+          title="Drag to reorder field"
+          {...attributes}
+          {...listeners}
+        >
+          <GripVertical size={12} />
+          Drag
+        </button>
+      </div>
+      {children}
+    </div>
+  );
+}
+
 export default function DocsTab() {
   const { tabs, activeTabId, updateActiveRequest, collections, openShareModal, storageMode } = useAppStore();
-  const [draggedFieldId, setDraggedFieldId] = useState<string | null>(null);
-  const [draggedGroup, setDraggedGroup] = useState<string | null>(null);
-  const [draggedPaletteType, setDraggedPaletteType] = useState<RequestFormFieldType | null>(null);
   const [visualPreviewMode, setVisualPreviewMode] = useState<'desktop' | 'mobile'>('desktop');
   const [showSchemaImport, setShowSchemaImport] = useState(false);
   const [schemaInput, setSchemaInput] = useState('');
@@ -334,7 +414,20 @@ export default function DocsTab() {
   const request = tab.requestState.request;
   const collectionId = tab.requestState.collectionId;
   const collection = collections.find((entry) => entry.id === collectionId);
+  const hasShareableFormRequests = Boolean(
+    collection?.requests?.some((entry) => Boolean(entry.formConfig?.enabled && (entry.formConfig.fields || []).length > 0)),
+  );
   const availableAuthRequests = (collection?.requests || []).filter((entry) => entry.id !== request.id);
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 6,
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    }),
+  );
 
   const formConfig = request.formConfig || createDefaultFormConfig();
   const savedTemplates = formConfig.templates || [];
@@ -481,6 +574,21 @@ export default function DocsTab() {
     updateFormConfig({ fields: reordered });
   };
 
+  const handleFieldSortEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) {
+      return;
+    }
+
+    const sourceIndex = formConfig.fields.findIndex((field) => field.id === String(active.id));
+    const targetIndex = formConfig.fields.findIndex((field) => field.id === String(over.id));
+    if (sourceIndex < 0 || targetIndex < 0) {
+      return;
+    }
+
+    updateFormConfig({ fields: arrayMove(formConfig.fields, sourceIndex, targetIndex) });
+  };
+
   const insertFieldBefore = (targetId: string, field: RequestFormField) => {
     const targetIndex = formConfig.fields.findIndex((entry) => entry.id === targetId);
     if (targetIndex < 0) {
@@ -598,6 +706,21 @@ export default function DocsTab() {
     const [moved] = next.splice(sourceIdx, 1);
     next.splice(targetIdx, 0, moved);
     reorderByGroupOrder(next);
+  };
+
+  const handleGroupSortEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) {
+      return;
+    }
+
+    const sourceIndex = groupOrder.indexOf(String(active.id));
+    const targetIndex = groupOrder.indexOf(String(over.id));
+    if (sourceIndex < 0 || targetIndex < 0) {
+      return;
+    }
+
+    reorderByGroupOrder(arrayMove(groupOrder, sourceIndex, targetIndex));
   };
 
   const applyTemplate = (templateId: FormTemplateId) => {
@@ -860,8 +983,20 @@ Returns a JSON object with user data."
                 {formConfig.enabled ? 'Form Enabled' : 'Enable Form'}
               </button>
               <button
-                onClick={() => updateActiveRequest({ formConfig: createAutoFormConfigFromRequest(request) })}
+                onClick={() => {
+                  const existingHeaderFields = (formConfig.fields || []).filter((f) => f.target === 'header');
+                  if (existingHeaderFields.length > 0) {
+                    const confirmed = window.confirm(
+                      `Auto-generate will replace current form with fields from request body only. This will remove ${existingHeaderFields.length} header field(s). Continue?`
+                    );
+                    if (!confirmed) {
+                      return;
+                    }
+                  }
+                  updateActiveRequest({ formConfig: createAutoFormConfigFromRequest(request) });
+                }}
                 className="btn-ghost text-xs inline-flex items-center gap-1.5"
+                title="Auto-generate form fields from request body parameters"
               >
                 <Sparkles size={12} /> Auto Generate
               </button>
@@ -871,10 +1006,20 @@ Returns a JSON object with user data."
                     setSchemaMessage('Form sharing requires remote mode and a saved collection request.');
                     return;
                   }
+                  if (!hasShareableFormRequests) {
+                    setSchemaMessage('Enable form and add at least one field before sharing a public form link.');
+                    return;
+                  }
                   openShareModal(collectionId, 'form');
                 }}
                 className="btn-ghost text-xs inline-flex items-center gap-1.5"
-                title={storageMode === 'remote' ? 'Open dedicated share form link modal' : 'Switch to remote mode to share form'}
+                title={
+                  storageMode === 'remote'
+                    ? hasShareableFormRequests
+                      ? 'Open dedicated share form link modal'
+                      : 'Enable at least one form request first'
+                    : 'Switch to remote mode to share form'
+                }
               >
                 <Share2 size={12} /> Share Form
               </button>
@@ -979,8 +1124,10 @@ Returns a JSON object with user data."
                 </div>
 
                 <div className="border border-app-border rounded p-3 space-y-3">
-                  <p className="text-xs uppercase tracking-wider text-app-muted">Visual Builder (Drag & Drop)</p>
-                  <p className="text-[11px] text-app-muted">Drag field type from palette into canvas to add input field. Drag cards in canvas to reorder.</p>
+                  <div>
+                    <p className="text-xs uppercase tracking-wider text-app-muted">Visual Builder (Drag & Drop)</p>
+                    <p className="text-[11px] text-app-muted mt-1">Preview below shows form layout. <strong>Add/edit/reorder fields in the "Form Fields" section below this preview.</strong></p>
+                  </div>
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
@@ -998,148 +1145,75 @@ Returns a JSON object with user data."
                     </button>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-[220px_1fr] gap-3">
-                    <div className="border border-app-border rounded p-2 space-y-2 bg-app-active/20">
-                      <p className="text-[11px] uppercase tracking-wider text-app-muted">Palette</p>
-                      <div className="grid grid-cols-2 gap-2">
-                        {PALETTE_FIELD_TYPES.map((type) => (
-                          <button
-                            key={type}
-                            draggable
-                            onDragStart={() => setDraggedPaletteType(type)}
-                            onDragEnd={() => setDraggedPaletteType(null)}
-                            className="px-2 py-1.5 rounded border border-app-border text-xs text-app-text bg-app-bg hover:bg-app-hover text-left"
-                            title="Drag into canvas"
-                          >
-                            {type}
-                          </button>
-                        ))}
-                      </div>
+                  <div className="border border-app-border rounded p-3 bg-app-active/20 space-y-3">
+                    <p className="text-[11px] text-app-muted">Preview of form layout - add/edit fields in the Form Fields section below.</p>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setVisualPreviewMode('desktop')}
+                        className={`btn-ghost text-xs ${visualPreviewMode === 'desktop' ? 'border-app-accent text-app-text' : ''}`}
+                      >
+                        Desktop Preview
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setVisualPreviewMode('mobile')}
+                        className={`btn-ghost text-xs ${visualPreviewMode === 'mobile' ? 'border-app-accent text-app-text' : ''}`}
+                      >
+                        Mobile Preview
+                      </button>
                     </div>
+                    {formConfig.fields.length === 0 ? (
+                      <p className="text-xs text-app-muted">No fields yet. Add fields using the Form Fields section below.</p>
+                    ) : (
+                      <div className={`mx-auto ${visualPreviewMode === 'mobile' ? 'max-w-[420px]' : 'w-full'} space-y-3`}>
+                        {groupOrder.map((groupName) => {
+                          const groupFields = formConfig.fields.filter(
+                            (field) => ((field.group || 'General').trim() || 'General') === groupName,
+                          );
 
-                    <div
-                      className="border border-dashed border-app-border rounded p-2 min-h-40 bg-app-bg/50"
-                      onDragOver={(event) => event.preventDefault()}
-                      onDrop={() => {
-                        if (draggedPaletteType) {
-                          updateFormConfig({ fields: [...formConfig.fields, createPaletteField(draggedPaletteType)] });
-                          setDraggedPaletteType(null);
-                          return;
-                        }
-                      }}
-                    >
-                      {formConfig.fields.length === 0 ? (
-                        <p className="text-xs text-app-muted">Drop field type here to start visual form layout.</p>
-                      ) : (
-                        <div className={`mx-auto ${visualPreviewMode === 'mobile' ? 'max-w-[420px]' : 'w-full'} space-y-3`}>
-                          {groupOrder.map((groupName) => {
-                            const groupFields = formConfig.fields.filter(
-                              (field) => ((field.group || 'General').trim() || 'General') === groupName,
-                            );
-
-                            return (
-                              <div
-                                key={`visual-group-${groupName}`}
-                                className="border border-app-border rounded p-2 bg-app-panel/40"
-                                onDragOver={(event) => event.preventDefault()}
-                                onDrop={() => {
-                                  if (draggedPaletteType) {
-                                    insertPaletteFieldToGroup(draggedPaletteType, groupName);
-                                    setDraggedPaletteType(null);
-                                    return;
-                                  }
-                                  if (draggedFieldId) {
-                                    moveFieldToGroup(draggedFieldId, groupName);
-                                    setDraggedFieldId(null);
-                                  }
-                                }}
-                              >
-                                <p className="text-[11px] uppercase tracking-wider text-app-muted mb-2">{groupName}</p>
-                                <div className={`grid grid-cols-1 ${visualPreviewMode === 'desktop' ? 'md:grid-cols-2' : ''} gap-2`}>
-                                  {groupFields.map((field) => (
-                                    <div
-                                      key={`visual-${field.id}`}
-                                      draggable
-                                      onDragStart={() => setDraggedFieldId(field.id)}
-                                      onDragOver={(event) => event.preventDefault()}
-                                      onDrop={() => {
-                                        if (draggedPaletteType) {
-                                          insertPaletteFieldToGroup(draggedPaletteType, groupName, field.id);
-                                          setDraggedPaletteType(null);
-                                          return;
-                                        }
-                                        if (draggedFieldId) {
-                                          moveFieldToGroup(draggedFieldId, groupName, field.id);
-                                          setDraggedFieldId(null);
-                                        }
-                                      }}
-                                      className={`border border-app-border rounded px-2 py-2 text-xs bg-app-bg ${field.layoutWidth === 'full' && visualPreviewMode === 'desktop' ? 'md:col-span-2' : ''}`}
-                                    >
-                                      <div className="flex items-center justify-between gap-2">
-                                        <span className="font-medium text-app-text truncate">{field.label}</span>
-                                        <span className="text-app-muted font-mono">{field.type}</span>
-                                      </div>
-                                      <div className="mt-1 flex items-center justify-between text-[11px] text-app-muted gap-2">
-                                        <span className="font-mono truncate">{field.target}{' -> '}{field.targetKey}</span>
-                                        <button
-                                          type="button"
-                                          onClick={() => updateField(field.id, { layoutWidth: field.layoutWidth === 'full' ? 'half' : 'full' })}
-                                          className="px-1.5 py-0.5 rounded border border-app-border hover:bg-app-hover"
-                                          title="Toggle half/full width"
-                                        >
-                                          {field.layoutWidth === 'full' ? 'full' : 'half'}
-                                        </button>
-                                      </div>
+                          return groupFields.length > 0 ? (
+                            <div key={`preview-group-${groupName}`} className="border border-app-border rounded p-2 bg-app-panel/40 space-y-1">
+                              <p className="text-[11px] uppercase tracking-wider text-app-muted">{groupName}</p>
+                              <div className={`grid grid-cols-1 ${visualPreviewMode === 'desktop' ? 'md:grid-cols-2' : ''} gap-2`}>
+                                {groupFields.map((field) => (
+                                  <div
+                                    key={`preview-${field.id}`}
+                                    className={`border border-app-border rounded px-2 py-2 text-xs bg-app-bg opacity-75 ${field.layoutWidth === 'full' && visualPreviewMode === 'desktop' ? 'md:col-span-2' : ''}`}
+                                  >
+                                    <div className="flex items-center justify-between gap-2">
+                                      <span className="font-medium text-app-text truncate">{field.label}</span>
+                                      <span className="text-app-muted font-mono text-[10px]">{field.type}</span>
                                     </div>
-                                  ))}
-                                </div>
+                                    <div className="mt-1 text-[10px] text-app-muted font-mono break-all">{field.target} → {field.targetKey}</div>
+                                  </div>
+                                ))}
                               </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
+                            </div>
+                          ) : null;
+                        })}
+                      </div>
+                    )}
                   </div>
                 </div>
 
                 {groupOrder.length > 0 && (
                   <div className="border border-app-border rounded p-3 space-y-2">
                     <p className="text-xs uppercase tracking-wider text-app-muted">Group Order (Drag & Drop)</p>
-                    <div className="flex flex-wrap gap-2">
-                      {groupOrder.map((groupName) => (
-                        <div
-                          key={groupName}
-                          draggable
-                          onDragStart={() => setDraggedGroup(groupName)}
-                          onDragOver={(event) => event.preventDefault()}
-                          onDrop={() => {
-                            if (!draggedGroup) return;
-                            moveGroupTo(draggedGroup, groupName);
-                            setDraggedGroup(null);
-                          }}
-                          className="inline-flex items-center gap-1 border border-app-border rounded px-2 py-1 text-xs text-app-text bg-app-bg"
-                          title="Drag and drop to reorder this group"
-                        >
-                          <span>{groupName}</span>
-                          <button
-                            type="button"
-                            title="Move group up"
-                            onClick={() => moveGroupBy(groupName, -1)}
-                            className="text-app-muted hover:text-app-text"
-                          >
-                            <ArrowUp size={12} />
-                          </button>
-                          <button
-                            type="button"
-                            title="Move group down"
-                            onClick={() => moveGroupBy(groupName, 1)}
-                            className="text-app-muted hover:text-app-text"
-                          >
-                            <ArrowDown size={12} />
-                          </button>
+                    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleGroupSortEnd}>
+                      <SortableContext items={groupOrder} strategy={horizontalListSortingStrategy}>
+                        <div className="flex flex-wrap gap-2">
+                          {groupOrder.map((groupName) => (
+                            <SortableGroupChip
+                              key={groupName}
+                              groupName={groupName}
+                              onMoveUp={() => moveGroupBy(groupName, -1)}
+                              onMoveDown={() => moveGroupBy(groupName, 1)}
+                            />
+                          ))}
                         </div>
-                      ))}
-                    </div>
+                      </SortableContext>
+                    </DndContext>
                   </div>
                 )}
 
@@ -1161,21 +1235,10 @@ Returns a JSON object with user data."
                     </div>
                   )}
 
-                  {formConfig.fields.map((field) => (
-                    <div
-                      key={field.id}
-                      draggable
-                      onDragStart={() => setDraggedFieldId(field.id)}
-                      onDragOver={(event) => event.preventDefault()}
-                      onDrop={() => {
-                        if (!draggedFieldId) {
-                          return;
-                        }
-                        moveField(draggedFieldId, field.id);
-                        setDraggedFieldId(null);
-                      }}
-                      className="border border-app-border rounded p-3 bg-app-bg/60"
-                    >
+                  <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleFieldSortEnd}>
+                    <SortableContext items={formConfig.fields.map((field) => field.id)} strategy={verticalListSortingStrategy}>
+                      {formConfig.fields.map((field) => (
+                        <SortableFieldShell key={field.id} fieldId={field.id}>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                         <label className="text-xs text-app-muted">
                           Label
@@ -1496,8 +1559,10 @@ Returns a JSON object with user data."
                           <Trash2 size={11} /> Remove
                         </button>
                       </div>
-                    </div>
-                  ))}
+                        </SortableFieldShell>
+                      ))}
+                    </SortableContext>
+                  </DndContext>
                 </div>
 
                 <div className="border-t border-app-border pt-4 space-y-3">

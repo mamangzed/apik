@@ -5,7 +5,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { apiClient } from '../../lib/apiClient';
 import { sendRequestWithSmartTransport } from '../../lib/requestTransport';
-import { ApiRequest, KeyValuePair, ProxyResponse, PublicCollectionResponse } from '../../types';
+import { ApiRequest, KeyValuePair, ProxyResponse, PublicCollectionResponse, RequestFormConfig, RequestFormFieldTarget } from '../../types';
 import { METHOD_BG_COLORS } from '../../utils/format';
 import PublicResponseViewer from './PublicResponseViewer';
 import {
@@ -40,6 +40,32 @@ function cloneRequest(request: ApiRequest): ApiRequest {
       formData: request.body.formData?.map((entry) => ({ ...entry })),
     },
     auth: { ...request.auth },
+  };
+}
+
+function isBodyFieldTarget(target: RequestFormFieldTarget): boolean {
+  return target === 'body-json' || target === 'body-form';
+}
+
+function toBodyOnlyFormConfig(config: RequestFormConfig | undefined): RequestFormConfig | undefined {
+  if (!config) {
+    return config;
+  }
+
+  const fields = (config.fields || []).filter((field) => isBodyFieldTarget(field.target));
+  const allowedFieldIds = new Set(fields.map((field) => field.id));
+
+  return {
+    ...config,
+    fields,
+    responseMappings: (config.responseMappings || []).filter((mapping) => allowedFieldIds.has(mapping.targetFieldId)),
+  };
+}
+
+function toBodyOnlyRequestForm(request: ApiRequest): ApiRequest {
+  return {
+    ...request,
+    formConfig: toBodyOnlyFormConfig(request.formConfig),
   };
 }
 
@@ -292,7 +318,7 @@ export default function PublicCollectionPage({ shareMode = 'collection' }: { sha
           const next: Record<string, Record<string, string>> = {};
           data.requests.forEach((request) => {
             if (request.formConfig?.enabled) {
-              next[request.id] = getInitialFormValues(request);
+              next[request.id] = getInitialFormValues(toBodyOnlyRequestForm(request));
             }
           });
           return next;
@@ -520,11 +546,30 @@ export default function PublicCollectionPage({ shareMode = 'collection' }: { sha
   };
 
   if (loading) {
-    return <div className="min-h-screen bg-app-bg text-app-text flex items-center justify-center">{shareMode === 'form' ? 'Loading shared form...' : 'Loading shared collection...'}</div>;
+    return (
+      <div className="min-h-screen bg-app-bg text-app-text flex flex-col items-center justify-center gap-3">
+        <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-app-accent"></div>
+        <p className="text-sm text-app-muted">{shareMode === 'form' ? 'Loading shared form...' : 'Loading shared collection...'}</p>
+      </div>
+    );
   }
 
   if (error || !collection) {
-    return <div className="min-h-screen bg-app-bg text-app-text flex items-center justify-center">{error || (shareMode === 'form' ? 'Form not found' : 'Collection not found')}</div>;
+    return (
+      <div className="min-h-screen bg-app-bg text-app-text flex flex-col items-center justify-center gap-4">
+        <div className="space-y-2 text-center max-w-sm">
+          <p className="text-lg font-medium text-app-muted">
+            {error ? 'Unable to Load Shared ' + (shareMode === 'form' ? 'Form' : 'Collection') : (shareMode === 'form' ? 'Form' : 'Collection') + ' Not Found'}
+          </p>
+          <p className="text-sm text-app-muted/70">
+            {error || 'This ' + (shareMode === 'form' ? 'form' : 'collection') + ' may have been deleted or the link is invalid.'}
+          </p>
+        </div>
+        <Link to="/" className="text-sm text-app-accent hover:underline">
+          Return to app
+        </Link>
+      </div>
+    );
   }
 
   const visibleRequests = shareMode === 'form'
@@ -571,7 +616,8 @@ export default function PublicCollectionPage({ shareMode = 'collection' }: { sha
 
         <div className="space-y-4">
           {visibleRequests.map((request) => {
-            const effectiveRequest = requestDrafts[request.id] || request;
+            const baseRequest = requestDrafts[request.id] || request;
+            const effectiveRequest = shareMode === 'form' ? toBodyOnlyRequestForm(baseRequest) : baseRequest;
             const response = responses[request.id];
             const hidden = hiddenRequests.has(request.id);
             const editing = editingRequests.has(request.id);
