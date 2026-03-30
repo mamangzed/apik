@@ -113,11 +113,21 @@ export default function ShareModal() {
       return;
     }
 
-    const updated = await updateCollectionShareAccess(collection.id, shareModalTarget, access);
-    if (updated.sharing[shareModalTarget].access === 'public') {
-      toast.success('Share link ready');
-    } else {
-      toast('Sharing set to private', { icon: '🔒' });
+    try {
+      const updated = await updateCollectionShareAccess(collection.id, shareModalTarget, access);
+      if (updated.sharing[shareModalTarget].access === 'public') {
+        toast.success('Share link ready');
+      } else {
+        toast('Sharing set to private', { icon: '🔒' });
+      }
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        const apiMessage =
+          (error.response?.data as { error?: string } | undefined)?.error || error.message;
+        toast.error(`Failed to update share access: ${apiMessage}`);
+      } else {
+        toast.error(error instanceof Error ? error.message : 'Failed to update share access');
+      }
     }
   };
 

@@ -23,8 +23,8 @@ type CollectionRow = {
   collection_share_token: string | null;
   docs_access: VisibilityMode;
   docs_share_token: string | null;
-  form_access: VisibilityMode;
-  form_share_token: string | null;
+  form_access?: VisibilityMode;
+  form_share_token?: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -134,15 +134,15 @@ function mapCollectionRow(
     sharing: {
       collection: {
         access: row.collection_access || document.sharing.collection.access,
-        token: row.collection_share_token,
+        token: row.collection_share_token ?? document.sharing.collection.token ?? null,
       },
       docs: {
         access: row.docs_access || document.sharing.docs.access,
-        token: row.docs_share_token,
+        token: row.docs_share_token ?? document.sharing.docs.token ?? null,
       },
       form: {
         access: row.form_access || document.sharing.form.access,
-        token: row.form_share_token,
+        token: row.form_share_token ?? document.sharing.form.token ?? null,
       },
     },
     collaborators: options?.collaborators ?? document.collaborators ?? [],
@@ -187,6 +187,36 @@ function toCollectionRow(ownerUserId: string, collection: Collection) {
     form_share_token: collection.sharing.form.token,
     updated_at: collection.updatedAt,
   };
+}
+
+function toCollectionRowLegacy(ownerUserId: string, collection: Collection) {
+  return {
+    id: collection.id,
+    owner_user_id: ownerUserId,
+    name: collection.name,
+    description: collection.description || '',
+    document: {
+      ...collection,
+      ownerUserId,
+      storageScope: 'remote',
+    },
+    collection_access: collection.sharing.collection.access,
+    collection_share_token: collection.sharing.collection.token,
+    docs_access: collection.sharing.docs.access,
+    docs_share_token: collection.sharing.docs.token,
+    updated_at: collection.updatedAt,
+  };
+}
+
+function isMissingFormShareColumnError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') {
+    return false;
+  }
+  const maybeMessage = 'message' in error ? String((error as { message?: unknown }).message || '') : '';
+  return (
+    maybeMessage.includes('form_access') ||
+    maybeMessage.includes('form_share_token')
+  );
 }
 
 function toEnvironmentRow(userId: string, environment: Environment) {
@@ -320,14 +350,33 @@ export async function listCollections(userId: string): Promise<Collection[]> {
 export async function upsertCollection(ownerUserId: string, collection: Collection): Promise<Collection> {
   const supabase = getSupabaseAdmin();
   const payload = toCollectionRow(ownerUserId, normalizeCollection(collection));
-  const { data, error } = await supabase
+  const firstAttempt = await supabase
     .from('apix_collections')
     .upsert(payload, { onConflict: 'id' })
     .select('*')
     .single();
 
-  if (error) throw error;
-  return mapCollectionRow(data as CollectionRow, { currentUserRole: 'owner' });
+  if (!firstAttempt.error) {
+    return mapCollectionRow(firstAttempt.data as CollectionRow, { currentUserRole: 'owner' });
+  }
+
+  if (!isMissingFormShareColumnError(firstAttempt.error)) {
+    throw firstAttempt.error;
+  }
+
+  // Backward-compatible fallback for DBs not yet migrated with form share columns.
+  const legacyPayload = toCollectionRowLegacy(ownerUserId, normalizeCollection(collection));
+  const legacyAttempt = await supabase
+    .from('apix_collections')
+    .upsert(legacyPayload, { onConflict: 'id' })
+    .select('*')
+    .single();
+
+  if (legacyAttempt.error) {
+    throw legacyAttempt.error;
+  }
+
+  return mapCollectionRow(legacyAttempt.data as CollectionRow, { currentUserRole: 'owner' });
 }
 
 export async function deleteCollection(userId: string, collectionId: string): Promise<boolean> {
@@ -638,14 +687,35 @@ export async function getPublicDocsByToken(token: string): Promise<PublicCollect
 
 export async function getPublicFormByToken(token: string): Promise<PublicCollectionResponse | null> {
   const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
+  const firstAttempt = await supabase
     .from('apix_collections')
     .select('*')
     .eq('form_share_token', token)
     .eq('form_access', 'public')
     .maybeSingle();
 
-  if (error) throw error;
+  let data = firstAttempt.data;
+
+  if (firstAttempt.error) {
+    if (!isMissingFormShareColumnError(firstAttempt.error)) {
+      throw firstAttempt.error;
+    }
+
+    // Backward-compatible fallback for DBs where form share is stored in JSON document only.
+    const legacyAttempt = await supabase
+      .from('apix_collections')
+      .select('*')
+      .filter('document->sharing->form->>token', 'eq', token)
+      .filter('document->sharing->form->>access', 'eq', 'public')
+      .maybeSingle();
+
+    if (legacyAttempt.error) {
+      throw legacyAttempt.error;
+    }
+
+    data = legacyAttempt.data;
+  }
+
   if (!data) {
     return null;
   }
