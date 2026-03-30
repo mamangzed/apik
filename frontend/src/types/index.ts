@@ -305,7 +305,7 @@ export interface InterceptedRequest {
   responseTimestamp?: number;
 }
 
-export type RequestTab = 'params' | 'headers' | 'body' | 'auth' | 'pre-script' | 'test-script' | 'docs';
+export type RequestTab = 'params' | 'headers' | 'body' | 'auth' | 'pre-script' | 'test-script' | 'form' | 'docs';
 export type ResponseTab = 'body' | 'headers' | 'cookies' | 'timeline' | 'history';
 
 export interface RequestState {

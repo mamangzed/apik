@@ -1,0 +1,2004 @@
+import { useEffect, useState } from 'react';
+import { ArrowDown, ArrowUp, Download, GripVertical, Plus, RotateCcw, Share2, Sparkles, Trash2, Upload } from 'lucide-react';
+import { closestCenter, DndContext, DragEndEvent, KeyboardSensor, PointerSensor, useDraggable, useDroppable, useSensor, useSensors } from '@dnd-kit/core';
+import { arrayMove, horizontalListSortingStrategy, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+import { useAppStore } from '../../store';
+import { createAutoFormConfigFromRequest } from '../../lib/requestForm';
+import { RequestFormConfig, RequestFormField, RequestFormFieldTarget, RequestFormFieldType, RequestFormTemplate } from '../../types';
+
+function createFieldId(): string {
+  return `field_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function createMappingId(): string {
+  return `mapping_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function createOptionId(): string {
+  return `option_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function cloneFormConfig(config: RequestFormConfig): RequestFormConfig {
+  return JSON.parse(JSON.stringify(config)) as RequestFormConfig;
+}
+
+function normalizeImportedFormConfig(raw: unknown): RequestFormConfig | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return null;
+  }
+
+  const input = raw as Record<string, unknown>;
+  const fieldsSource = Array.isArray(input.fields) ? input.fields : [];
+  const mappingsSource = Array.isArray(input.responseMappings) ? input.responseMappings : [];
+
+  const fields: RequestFormField[] = fieldsSource.map((fieldRaw) => {
+    const field = (fieldRaw && typeof fieldRaw === 'object' ? fieldRaw : {}) as Record<string, unknown>;
+    const optionsSource = Array.isArray(field.options) ? field.options : [];
+
+    return {
+      id: typeof field.id === 'string' ? field.id : createFieldId(),
+      name: typeof field.name === 'string' ? field.name : `field_${Math.random().toString(36).slice(2, 7)}`,
+      label: typeof field.label === 'string' ? field.label : 'Field',
+      type: typeof field.type === 'string' ? (field.type as RequestFormFieldType) : 'text',
+      layoutWidth: field.layoutWidth === 'full' ? 'full' : 'half',
+      required: Boolean(field.required),
+      target: typeof field.target === 'string' ? (field.target as RequestFormFieldTarget) : 'body-json',
+      targetKey: typeof field.targetKey === 'string' ? field.targetKey : 'value',
+      placeholder: typeof field.placeholder === 'string' ? field.placeholder : '',
+      defaultValue: typeof field.defaultValue === 'string' ? field.defaultValue : '',
+      description: typeof field.description === 'string' ? field.description : '',
+      options: optionsSource.map((optRaw) => {
+        const option = (optRaw && typeof optRaw === 'object' ? optRaw : {}) as Record<string, unknown>;
+        return {
+          id: typeof option.id === 'string' ? option.id : createOptionId(),
+          label: typeof option.label === 'string' ? option.label : 'Option',
+          value: typeof option.value === 'string' ? option.value : 'option',
+        };
+      }),
+      min: typeof field.min === 'number' ? field.min : undefined,
+      max: typeof field.max === 'number' ? field.max : undefined,
+      step: typeof field.step === 'number' ? field.step : undefined,
+      pattern: typeof field.pattern === 'string' ? field.pattern : '',
+      accept: typeof field.accept === 'string' ? field.accept : '',
+      multiple: Boolean(field.multiple),
+      repeatable: Boolean(field.repeatable),
+      repeatSeparator:
+        field.repeatSeparator === 'comma' || field.repeatSeparator === 'json-lines' ? field.repeatSeparator : 'newline',
+      group: typeof field.group === 'string' ? field.group : 'General',
+      visibilityDependsOnFieldName:
+        typeof field.visibilityDependsOnFieldName === 'string' ? field.visibilityDependsOnFieldName : '',
+      visibilityOperator:
+        field.visibilityOperator === 'not-equals' ||
+        field.visibilityOperator === 'contains' ||
+        field.visibilityOperator === 'filled' ||
+        field.visibilityOperator === 'not-filled'
+          ? field.visibilityOperator
+          : 'equals',
+      visibilityValue: typeof field.visibilityValue === 'string' ? field.visibilityValue : '',
+    };
+  });
+
+  const responseMappings = mappingsSource
+    .map((mappingRaw) => {
+      const mapping = (mappingRaw && typeof mappingRaw === 'object' ? mappingRaw : {}) as Record<string, unknown>;
+      return {
+        id: typeof mapping.id === 'string' ? mapping.id : createMappingId(),
+        sourceRequestId: typeof mapping.sourceRequestId === 'string' ? mapping.sourceRequestId : '',
+        responsePath: typeof mapping.responsePath === 'string' ? mapping.responsePath : '',
+        targetFieldId: typeof mapping.targetFieldId === 'string' ? mapping.targetFieldId : '',
+      };
+    })
+    .filter((entry) => entry.targetFieldId);
+
+  const templatesSource = Array.isArray(input.templates) ? input.templates : [];
+  const templates: RequestFormTemplate[] = templatesSource
+    .map((templateRaw) => {
+      const template = (templateRaw && typeof templateRaw === 'object' ? templateRaw : {}) as Record<string, unknown>;
+      const templateFieldsSource = Array.isArray(template.fields) ? template.fields : [];
+      const templateFields = templateFieldsSource
+        .map((fieldRaw) => normalizeImportedFormConfig({ enabled: true, fields: [fieldRaw], responseMappings: [] })?.fields?.[0])
+        .filter(Boolean) as RequestFormField[];
+
+      return {
+        id: typeof template.id === 'string' ? template.id : `tpl_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        name: typeof template.name === 'string' ? template.name : 'Untitled Template',
+        fields: templateFields,
+        createdAt: typeof template.createdAt === 'number' ? template.createdAt : Date.now(),
+      };
+    })
+    .filter((template) => template.fields.length > 0);
+
+  return {
+    enabled: input.enabled !== false,
+    fields,
+    authRequirement: {
+      enabled: Boolean((input.authRequirement as Record<string, unknown> | undefined)?.enabled),
+      sourceRequestId:
+        typeof (input.authRequirement as Record<string, unknown> | undefined)?.sourceRequestId === 'string'
+          ? String((input.authRequirement as Record<string, unknown>).sourceRequestId)
+          : '',
+      tokenPath:
+        typeof (input.authRequirement as Record<string, unknown> | undefined)?.tokenPath === 'string'
+          ? String((input.authRequirement as Record<string, unknown>).tokenPath)
+          : 'token',
+      scheme:
+        (input.authRequirement as Record<string, unknown> | undefined)?.scheme === 'Token'
+          ? 'Token'
+          : (input.authRequirement as Record<string, unknown> | undefined)?.scheme === 'Raw'
+            ? 'Raw'
+            : 'Bearer',
+      headerName:
+        typeof (input.authRequirement as Record<string, unknown> | undefined)?.headerName === 'string'
+          ? String((input.authRequirement as Record<string, unknown>).headerName)
+          : 'Authorization',
+    },
+    responseMappings,
+    scripts: {
+      beforeSubmit:
+        typeof (input.scripts as Record<string, unknown> | undefined)?.beforeSubmit === 'string'
+          ? String((input.scripts as Record<string, unknown>).beforeSubmit)
+          : '',
+      afterResponse:
+        typeof (input.scripts as Record<string, unknown> | undefined)?.afterResponse === 'string'
+          ? String((input.scripts as Record<string, unknown>).afterResponse)
+          : '',
+    },
+    templates,
+    ui: {
+      title:
+        typeof (input.ui as Record<string, unknown> | undefined)?.title === 'string'
+          ? String((input.ui as Record<string, unknown>).title)
+          : '',
+      subtitle:
+        typeof (input.ui as Record<string, unknown> | undefined)?.subtitle === 'string'
+          ? String((input.ui as Record<string, unknown>).subtitle)
+          : '',
+      submitLabel:
+        typeof (input.ui as Record<string, unknown> | undefined)?.submitLabel === 'string'
+          ? String((input.ui as Record<string, unknown>).submitLabel)
+          : 'Submit Form',
+      showReset:
+        typeof (input.ui as Record<string, unknown> | undefined)?.showReset === 'boolean'
+          ? Boolean((input.ui as Record<string, unknown>).showReset)
+          : true,
+      resetLabel:
+        typeof (input.ui as Record<string, unknown> | undefined)?.resetLabel === 'string'
+          ? String((input.ui as Record<string, unknown>).resetLabel)
+          : 'Reset',
+      customStyle:
+        typeof (input.ui as Record<string, unknown> | undefined)?.customStyle === 'string'
+          ? String((input.ui as Record<string, unknown>).customStyle)
+          : '',
+      customScript:
+        typeof (input.ui as Record<string, unknown> | undefined)?.customScript === 'string'
+          ? String((input.ui as Record<string, unknown>).customScript)
+          : '',
+    },
+  };
+}
+
+type FormTemplateId = 'login' | 'register' | 'address' | 'payment';
+
+type ImportPreview = {
+  valid: boolean;
+  nextFieldCount: number;
+  nextMappingCount: number;
+  addedFields: string[];
+  removedFields: string[];
+  error?: string;
+};
+
+function createDefaultFormConfig(): RequestFormConfig {
+  return {
+    enabled: false,
+    fields: [],
+    authRequirement: {
+      enabled: false,
+      sourceRequestId: '',
+      tokenPath: 'token',
+      scheme: 'Bearer',
+      headerName: 'Authorization',
+    },
+    responseMappings: [],
+    scripts: {
+      beforeSubmit: '',
+      afterResponse: '',
+    },
+    templates: [],
+    ui: {
+      title: '',
+      subtitle: '',
+      submitLabel: 'Submit Form',
+      showReset: true,
+      resetLabel: 'Reset',
+      customStyle: '',
+      customScript: '',
+    },
+  };
+}
+
+function createCustomField(): RequestFormField {
+  return {
+    id: createFieldId(),
+    name: `field_${Math.random().toString(36).slice(2, 7)}`,
+    label: 'Custom Field',
+    type: 'text',
+    layoutWidth: 'half',
+    required: false,
+    target: 'body-json',
+    targetKey: 'customField',
+    placeholder: '',
+    defaultValue: '',
+    description: '',
+    options: [],
+    min: undefined,
+    max: undefined,
+    step: undefined,
+    pattern: '',
+    accept: '',
+    multiple: false,
+    repeatable: false,
+    repeatSeparator: 'newline',
+    group: 'General',
+    visibilityDependsOnFieldName: '',
+    visibilityOperator: 'equals',
+    visibilityValue: '',
+  };
+}
+
+function createTemplateField(overrides: Partial<RequestFormField>): RequestFormField {
+  return {
+    ...createCustomField(),
+    id: createFieldId(),
+    name: overrides.name || `field_${Math.random().toString(36).slice(2, 7)}`,
+    label: overrides.label || 'Field',
+    type: overrides.type || 'text',
+    target: overrides.target || 'body-json',
+    targetKey: overrides.targetKey || 'value',
+    group: overrides.group || 'General',
+    ...overrides,
+  };
+}
+
+const FIELD_TYPES: RequestFormFieldType[] = [
+  'text',
+  'password',
+  'number',
+  'textarea',
+  'select',
+  'checkbox',
+  'radio',
+  'email',
+  'tel',
+  'url',
+  'date',
+  'time',
+  'datetime-local',
+  'range',
+  'color',
+  'file',
+  'address',
+  'json',
+];
+const FIELD_TARGETS: RequestFormFieldTarget[] = ['body-json', 'body-form'];
+
+const PALETTE_FIELD_TYPES: RequestFormFieldType[] = [
+  'text',
+  'email',
+  'password',
+  'tel',
+  'number',
+  'textarea',
+  'select',
+  'checkbox',
+  'date',
+  'file',
+  'json',
+];
+
+function createPaletteField(type: RequestFormFieldType): RequestFormField {
+  const pretty = type.replace(/-/g, ' ');
+  const label = pretty.charAt(0).toUpperCase() + pretty.slice(1);
+  const slug = pretty.replace(/\s+/g, '_').toLowerCase();
+  return createTemplateField({
+    name: `${slug}_${Math.random().toString(36).slice(2, 6)}`,
+    label,
+    type,
+    target: 'body-json',
+    targetKey: slug,
+    group: 'General',
+  });
+}
+
+function SortableGroupChip({
+  groupName,
+  onMoveUp,
+  onMoveDown,
+}: {
+  groupName: string;
+  onMoveUp: () => void;
+  onMoveDown: () => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: groupName });
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+      }}
+      className={`inline-flex items-center gap-1 border border-app-border rounded px-2 py-1 text-xs text-app-text bg-app-bg ${isDragging ? 'opacity-70' : ''}`}
+      title="Drag and drop to reorder this group"
+    >
+      <button
+        type="button"
+        className="text-app-muted hover:text-app-text cursor-grab active:cursor-grabbing"
+        title="Drag to reorder group"
+        {...attributes}
+        {...listeners}
+      >
+        <GripVertical size={12} />
+      </button>
+      <span>{groupName}</span>
+      <button
+        type="button"
+        title="Move group up"
+        onClick={onMoveUp}
+        className="text-app-muted hover:text-app-text"
+      >
+        <ArrowUp size={12} />
+      </button>
+      <button
+        type="button"
+        title="Move group down"
+        onClick={onMoveDown}
+        className="text-app-muted hover:text-app-text"
+      >
+        <ArrowDown size={12} />
+      </button>
+    </div>
+  );
+}
+
+function SortableFieldShell({ fieldId, children }: { fieldId: string; children: React.ReactNode }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: fieldId });
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+      }}
+      className={`border border-app-border rounded p-3 bg-app-bg/60 ${isDragging ? 'opacity-70' : ''}`}
+    >
+      <div className="mb-2 flex items-center justify-end">
+        <button
+          type="button"
+          className="inline-flex items-center gap-1 text-[11px] text-app-muted hover:text-app-text cursor-grab active:cursor-grabbing"
+          title="Drag to reorder field"
+          {...attributes}
+          {...listeners}
+        >
+          <GripVertical size={12} />
+          Drag
+        </button>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function PaletteFieldCard({ type }: { type: RequestFormFieldType }) {
+  const id = `palette:${type}`;
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id });
+
+  return (
+    <button
+      ref={setNodeRef}
+      type="button"
+      style={{
+        transform: CSS.Translate.toString(transform),
+      }}
+      className={`border border-app-border rounded px-2 py-1.5 text-xs text-app-text bg-app-panel inline-flex items-center gap-1.5 cursor-grab active:cursor-grabbing ${isDragging ? 'opacity-70' : ''}`}
+      title="Drag this field type to canvas"
+      {...attributes}
+      {...listeners}
+    >
+      <GripVertical size={11} className="text-app-muted" />
+      {type}
+    </button>
+  );
+}
+
+function CanvasGroupDropZone({ groupName, children }: { groupName: string; children: React.ReactNode }) {
+  const { isOver, setNodeRef } = useDroppable({ id: `group-drop:${groupName}` });
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={`border rounded p-2 bg-app-panel/40 space-y-1 transition-colors ${isOver ? 'border-app-accent' : 'border-app-border'}`}
+    >
+      {children}
+    </div>
+  );
+}
+
+function CanvasFieldDropTarget({ fieldId, children }: { fieldId: string; children: React.ReactNode }) {
+  const { isOver, setNodeRef } = useDroppable({ id: `field-drop:${fieldId}` });
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={`rounded transition-colors ${isOver ? 'ring-1 ring-app-accent' : ''}`}
+    >
+      {children}
+    </div>
+  );
+}
+
+export default function FormTab() {
+  const { tabs, activeTabId, updateActiveRequest, collections, openShareModal, storageMode } = useAppStore();
+  const [visualPreviewMode, setVisualPreviewMode] = useState<'desktop' | 'mobile'>('desktop');
+  const [showSchemaImport, setShowSchemaImport] = useState(false);
+  const [schemaInput, setSchemaInput] = useState('');
+  const [schemaMessage, setSchemaMessage] = useState('');
+  const [undoSnapshot, setUndoSnapshot] = useState<RequestFormConfig | null>(null);
+  const [customTemplateName, setCustomTemplateName] = useState('');
+  const tab = tabs.find((entry) => entry.id === activeTabId);
+  if (!tab) return null;
+
+  const request = tab.requestState.request;
+  const collectionId = tab.requestState.collectionId;
+  const collection = collections.find((entry) => entry.id === collectionId);
+  const hasShareableFormRequests = Boolean(
+    collection?.requests?.some((entry) => Boolean(entry.formConfig?.enabled && (entry.formConfig.fields || []).length > 0)),
+  );
+  const availableAuthRequests = (collection?.requests || []).filter((entry) => entry.id !== request.id);
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 6,
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    }),
+  );
+
+  const formConfig = request.formConfig || createDefaultFormConfig();
+  const savedTemplates = formConfig.templates || [];
+  const legacyTemplatesStorageKey = `apik.formTemplates.${request.id}`;
+
+  const updateFormConfig = (updates: Partial<RequestFormConfig>) => {
+    updateActiveRequest({
+      formConfig: {
+        ...formConfig,
+        ...updates,
+      },
+    });
+  };
+
+  useEffect(() => {
+    if (savedTemplates.length > 0) {
+      return;
+    }
+
+    try {
+      const raw = localStorage.getItem(legacyTemplatesStorageKey);
+      if (!raw) {
+        return;
+      }
+
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) {
+        return;
+      }
+
+      const migrated = parsed
+        .map((templateRaw) => {
+          const template = (templateRaw && typeof templateRaw === 'object' ? templateRaw : {}) as Record<string, unknown>;
+          const templateFieldsSource = Array.isArray(template.fields) ? template.fields : [];
+          const fields = templateFieldsSource
+            .map((fieldRaw) => normalizeImportedFormConfig({ enabled: true, fields: [fieldRaw], responseMappings: [] })?.fields?.[0])
+            .filter(Boolean) as RequestFormField[];
+
+          return {
+            id: typeof template.id === 'string' ? template.id : `tpl_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+            name: typeof template.name === 'string' ? template.name : 'Untitled Template',
+            fields,
+            createdAt: typeof template.createdAt === 'number' ? template.createdAt : Date.now(),
+          };
+        })
+        .filter((template) => template.fields.length > 0) as RequestFormTemplate[];
+
+      if (migrated.length === 0) {
+        return;
+      }
+
+      updateFormConfig({ templates: migrated });
+      localStorage.removeItem(legacyTemplatesStorageKey);
+      setSchemaMessage(`Migrated ${migrated.length} local template(s). Click Save to sync.`);
+    } catch {
+      // Ignore legacy template migration errors.
+    }
+  }, [legacyTemplatesStorageKey, savedTemplates.length]);
+
+  const persistSavedTemplates = (next: RequestFormTemplate[]) => {
+    updateFormConfig({ templates: next });
+  };
+
+  const updateField = (fieldId: string, updates: Partial<RequestFormField>) => {
+    updateFormConfig({
+      fields: formConfig.fields.map((field) => (field.id === fieldId ? { ...field, ...updates } : field)),
+    });
+  };
+
+  const removeField = (fieldId: string) => {
+    updateFormConfig({
+      fields: formConfig.fields.filter((field) => field.id !== fieldId),
+      responseMappings: (formConfig.responseMappings || []).filter((mapping) => mapping.targetFieldId !== fieldId),
+    });
+  };
+
+  const addFieldOption = (fieldId: string) => {
+    updateFormConfig({
+      fields: formConfig.fields.map((field) => {
+        if (field.id !== fieldId) {
+          return field;
+        }
+
+        const current = field.options || [];
+        return {
+          ...field,
+          options: [
+            ...current,
+            {
+              id: createOptionId(),
+              label: `Option ${current.length + 1}`,
+              value: `option_${current.length + 1}`,
+            },
+          ],
+        };
+      }),
+    });
+  };
+
+  const updateFieldOption = (fieldId: string, optionId: string, updates: { label?: string; value?: string }) => {
+    updateFormConfig({
+      fields: formConfig.fields.map((field) => {
+        if (field.id !== fieldId) {
+          return field;
+        }
+
+        return {
+          ...field,
+          options: (field.options || []).map((option) => (option.id === optionId ? { ...option, ...updates } : option)),
+        };
+      }),
+    });
+  };
+
+  const removeFieldOption = (fieldId: string, optionId: string) => {
+    updateFormConfig({
+      fields: formConfig.fields.map((field) => {
+        if (field.id !== fieldId) {
+          return field;
+        }
+
+        return {
+          ...field,
+          options: (field.options || []).filter((option) => option.id !== optionId),
+        };
+      }),
+    });
+  };
+
+  const moveField = (sourceId: string, targetId: string) => {
+    if (sourceId === targetId) {
+      return;
+    }
+
+    const sourceIndex = formConfig.fields.findIndex((field) => field.id === sourceId);
+    const targetIndex = formConfig.fields.findIndex((field) => field.id === targetId);
+    if (sourceIndex < 0 || targetIndex < 0) {
+      return;
+    }
+
+    const reordered = [...formConfig.fields];
+    const [moved] = reordered.splice(sourceIndex, 1);
+    reordered.splice(targetIndex, 0, moved);
+    updateFormConfig({ fields: reordered });
+  };
+
+  const handleFieldSortEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) {
+      return;
+    }
+
+    const sourceIndex = formConfig.fields.findIndex((field) => field.id === String(active.id));
+    const targetIndex = formConfig.fields.findIndex((field) => field.id === String(over.id));
+    if (sourceIndex < 0 || targetIndex < 0) {
+      return;
+    }
+
+    updateFormConfig({ fields: arrayMove(formConfig.fields, sourceIndex, targetIndex) });
+  };
+
+  const handleCanvasDrop = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over) {
+      return;
+    }
+
+    const activeId = String(active.id);
+    const overId = String(over.id);
+
+    if (activeId.startsWith('palette:')) {
+      const type = activeId.replace('palette:', '') as RequestFormFieldType;
+      if (overId.startsWith('group-drop:')) {
+        insertPaletteFieldToGroup(type, overId.replace('group-drop:', ''));
+        return;
+      }
+
+      if (overId.startsWith('field-drop:')) {
+        const targetFieldId = overId.replace('field-drop:', '');
+        const targetField = formConfig.fields.find((field) => field.id === targetFieldId);
+        if (!targetField) {
+          return;
+        }
+
+        insertPaletteFieldToGroup(type, (targetField.group || 'General').trim() || 'General', targetFieldId);
+      }
+      return;
+    }
+
+    const sourceField = formConfig.fields.find((field) => field.id === activeId);
+    if (!sourceField) {
+      return;
+    }
+
+    if (overId.startsWith('group-drop:')) {
+      moveFieldToGroup(activeId, overId.replace('group-drop:', ''));
+      return;
+    }
+
+    if (overId.startsWith('field-drop:')) {
+      const targetFieldId = overId.replace('field-drop:', '');
+      const targetField = formConfig.fields.find((field) => field.id === targetFieldId);
+      if (!targetField) {
+        return;
+      }
+
+      moveFieldToGroup(activeId, (targetField.group || 'General').trim() || 'General', targetFieldId);
+    }
+  };
+
+  const insertFieldBefore = (targetId: string, field: RequestFormField) => {
+    const targetIndex = formConfig.fields.findIndex((entry) => entry.id === targetId);
+    if (targetIndex < 0) {
+      updateFormConfig({ fields: [...formConfig.fields, field] });
+      return;
+    }
+
+    const next = [...formConfig.fields];
+    next.splice(targetIndex, 0, field);
+    updateFormConfig({ fields: next });
+  };
+
+  const moveFieldToGroup = (fieldId: string, targetGroup: string, targetFieldId?: string) => {
+    const sourceIndex = formConfig.fields.findIndex((entry) => entry.id === fieldId);
+    if (sourceIndex < 0) {
+      return;
+    }
+
+    const safeGroup = targetGroup.trim() || 'General';
+    const working = [...formConfig.fields];
+    const [movedRaw] = working.splice(sourceIndex, 1);
+    const moved = { ...movedRaw, group: safeGroup };
+
+    if (targetFieldId) {
+      const targetIndex = working.findIndex((entry) => entry.id === targetFieldId);
+      if (targetIndex >= 0) {
+        working.splice(targetIndex, 0, moved);
+        updateFormConfig({ fields: working });
+        return;
+      }
+    }
+
+    const lastIndexInGroup = [...working]
+      .map((entry, index) => ({ entry, index }))
+      .filter((item) => ((item.entry.group || 'General').trim() || 'General') === safeGroup)
+      .map((item) => item.index)
+      .pop();
+
+    if (typeof lastIndexInGroup === 'number') {
+      working.splice(lastIndexInGroup + 1, 0, moved);
+    } else {
+      working.push(moved);
+    }
+
+    updateFormConfig({ fields: working });
+  };
+
+  const insertPaletteFieldToGroup = (type: RequestFormFieldType, targetGroup: string, targetFieldId?: string) => {
+    const created = { ...createPaletteField(type), group: targetGroup.trim() || 'General' };
+    if (targetFieldId) {
+      insertFieldBefore(targetFieldId, created);
+      return;
+    }
+
+    const safeGroup = (targetGroup || 'General').trim() || 'General';
+    const lastIndexInGroup = [...formConfig.fields]
+      .map((entry, index) => ({ entry, index }))
+      .filter((item) => ((item.entry.group || 'General').trim() || 'General') === safeGroup)
+      .map((item) => item.index)
+      .pop();
+
+    if (typeof lastIndexInGroup !== 'number') {
+      updateFormConfig({ fields: [...formConfig.fields, created] });
+      return;
+    }
+
+    const next = [...formConfig.fields];
+    next.splice(lastIndexInGroup + 1, 0, created);
+    updateFormConfig({ fields: next });
+  };
+
+  const groupOrder = Array.from(
+    new Set(formConfig.fields.map((field) => (field.group || 'General').trim() || 'General')),
+  );
+
+  const reorderByGroupOrder = (order: string[]) => {
+    const grouped = new Map<string, RequestFormField[]>();
+    formConfig.fields.forEach((field) => {
+      const key = (field.group || 'General').trim() || 'General';
+      grouped.set(key, [...(grouped.get(key) || []), field]);
+    });
+
+    const reordered: RequestFormField[] = [];
+    order.forEach((groupName) => {
+      (grouped.get(groupName) || []).forEach((field) => reordered.push(field));
+    });
+
+    updateFormConfig({ fields: reordered });
+  };
+
+  const moveGroupBy = (groupName: string, delta: number) => {
+    const idx = groupOrder.indexOf(groupName);
+    const target = idx + delta;
+    if (idx < 0 || target < 0 || target >= groupOrder.length) {
+      return;
+    }
+
+    const next = [...groupOrder];
+    const [moved] = next.splice(idx, 1);
+    next.splice(target, 0, moved);
+    reorderByGroupOrder(next);
+  };
+
+  const moveGroupTo = (sourceGroup: string, targetGroup: string) => {
+    if (!sourceGroup || !targetGroup || sourceGroup === targetGroup) {
+      return;
+    }
+    const sourceIdx = groupOrder.indexOf(sourceGroup);
+    const targetIdx = groupOrder.indexOf(targetGroup);
+    if (sourceIdx < 0 || targetIdx < 0) {
+      return;
+    }
+
+    const next = [...groupOrder];
+    const [moved] = next.splice(sourceIdx, 1);
+    next.splice(targetIdx, 0, moved);
+    reorderByGroupOrder(next);
+  };
+
+  const handleGroupSortEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) {
+      return;
+    }
+
+    const sourceIndex = groupOrder.indexOf(String(active.id));
+    const targetIndex = groupOrder.indexOf(String(over.id));
+    if (sourceIndex < 0 || targetIndex < 0) {
+      return;
+    }
+
+    reorderByGroupOrder(arrayMove(groupOrder, sourceIndex, targetIndex));
+  };
+
+  const applyTemplate = (templateId: FormTemplateId) => {
+    const templates: Record<FormTemplateId, RequestFormField[]> = {
+      login: [
+        createTemplateField({ name: 'username', label: 'Username', type: 'text', target: 'body-json', targetKey: 'username', required: true, group: 'Credentials' }),
+        createTemplateField({ name: 'password', label: 'Password', type: 'password', target: 'body-json', targetKey: 'password', required: true, group: 'Credentials' }),
+      ],
+      register: [
+        createTemplateField({ name: 'name', label: 'Full Name', type: 'text', target: 'body-json', targetKey: 'name', required: true, group: 'Registration' }),
+        createTemplateField({ name: 'email', label: 'Email', type: 'email', target: 'body-json', targetKey: 'email', required: true, group: 'Registration' }),
+        createTemplateField({ name: 'password', label: 'Password', type: 'password', target: 'body-json', targetKey: 'password', required: true, group: 'Registration' }),
+        createTemplateField({ name: 'confirmPassword', label: 'Confirm Password', type: 'password', target: 'body-json', targetKey: 'confirmPassword', required: true, group: 'Registration' }),
+      ],
+      address: [
+        createTemplateField({ name: 'shippingAddress', label: 'Shipping Address', type: 'address', target: 'body-json', targetKey: 'shippingAddress', required: true, group: 'Address' }),
+        createTemplateField({ name: 'notes', label: 'Address Notes', type: 'textarea', target: 'body-json', targetKey: 'shippingAddress.notes', group: 'Address' }),
+      ],
+      payment: [
+        createTemplateField({ name: 'cardNumber', label: 'Card Number', type: 'text', target: 'body-json', targetKey: 'payment.cardNumber', required: true, group: 'Payment' }),
+        createTemplateField({ name: 'expiry', label: 'Expiry', type: 'text', target: 'body-json', targetKey: 'payment.expiry', required: true, group: 'Payment', placeholder: 'MM/YY' }),
+        createTemplateField({ name: 'cvv', label: 'CVV', type: 'password', target: 'body-json', targetKey: 'payment.cvv', required: true, group: 'Payment' }),
+        createTemplateField({ name: 'billingZip', label: 'Billing ZIP', type: 'text', target: 'body-json', targetKey: 'payment.billingZip', required: true, group: 'Payment' }),
+      ],
+    };
+
+    updateFormConfig({
+      fields: [...formConfig.fields, ...templates[templateId]],
+    });
+  };
+
+  const cloneFieldsForInsert = (fields: RequestFormField[]): RequestFormField[] => {
+    const usedNames = new Set(formConfig.fields.map((field) => field.name));
+    return fields.map((field) => {
+      const baseName = field.name || `field_${Math.random().toString(36).slice(2, 7)}`;
+      let uniqueName = baseName;
+      let idx = 2;
+      while (usedNames.has(uniqueName)) {
+        uniqueName = `${baseName}_${idx}`;
+        idx += 1;
+      }
+      usedNames.add(uniqueName);
+
+      return {
+        ...field,
+        id: createFieldId(),
+        name: uniqueName,
+        options: (field.options || []).map((option) => ({ ...option, id: createOptionId() })),
+      };
+    });
+  };
+
+  const handleSaveCurrentAsTemplate = () => {
+    const name = customTemplateName.trim();
+    if (!name) {
+      setSchemaMessage('Template name is required.');
+      return;
+    }
+    if (formConfig.fields.length === 0) {
+      setSchemaMessage('Cannot save template: no fields in current schema.');
+      return;
+    }
+
+    const next: RequestFormTemplate[] = [
+      {
+        id: `tpl_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        name,
+        fields: cloneFormConfig(formConfig).fields,
+        createdAt: Date.now(),
+      },
+      ...savedTemplates,
+    ].slice(0, 20);
+
+    persistSavedTemplates(next);
+    setCustomTemplateName('');
+    setSchemaMessage(`Template \"${name}\" saved.`);
+  };
+
+  const handleApplySavedTemplate = (templateId: string) => {
+    const template = savedTemplates.find((entry) => entry.id === templateId);
+    if (!template) {
+      return;
+    }
+
+    updateFormConfig({ fields: [...formConfig.fields, ...cloneFieldsForInsert(template.fields)] });
+    setSchemaMessage(`Template \"${template.name}\" applied.`);
+  };
+
+  const handleDeleteSavedTemplate = (templateId: string) => {
+    const target = savedTemplates.find((entry) => entry.id === templateId);
+    const next = savedTemplates.filter((entry) => entry.id !== templateId);
+    persistSavedTemplates(next);
+    if (target) {
+      setSchemaMessage(`Template \"${target.name}\" deleted.`);
+    }
+  };
+
+  const handleRenameSavedTemplate = (templateId: string) => {
+    const target = savedTemplates.find((entry) => entry.id === templateId);
+    if (!target) {
+      return;
+    }
+
+    const nextName = window.prompt('Rename template', target.name);
+    if (nextName === null) {
+      return;
+    }
+
+    const trimmed = nextName.trim();
+    if (!trimmed) {
+      setSchemaMessage('Template name cannot be empty.');
+      return;
+    }
+
+    const next = savedTemplates.map((entry) => (entry.id === templateId ? { ...entry, name: trimmed } : entry));
+    persistSavedTemplates(next);
+    setSchemaMessage(`Template renamed to \"${trimmed}\".`);
+  };
+
+  const getImportPreview = (): ImportPreview | null => {
+    const raw = schemaInput.trim();
+    if (!raw) {
+      return null;
+    }
+
+    try {
+      const parsed = JSON.parse(raw);
+      const normalized = normalizeImportedFormConfig(parsed);
+      if (!normalized) {
+        return {
+          valid: false,
+          nextFieldCount: 0,
+          nextMappingCount: 0,
+          addedFields: [],
+          removedFields: [],
+          error: 'Invalid schema shape.',
+        };
+      }
+
+      const currentNames = new Set(formConfig.fields.map((field) => field.name));
+      const nextNames = new Set(normalized.fields.map((field) => field.name));
+
+      const addedFields = normalized.fields.map((field) => field.name).filter((name) => !currentNames.has(name));
+      const removedFields = formConfig.fields.map((field) => field.name).filter((name) => !nextNames.has(name));
+
+      return {
+        valid: true,
+        nextFieldCount: normalized.fields.length,
+        nextMappingCount: (normalized.responseMappings || []).length,
+        addedFields,
+        removedFields,
+      };
+    } catch {
+      return {
+        valid: false,
+        nextFieldCount: 0,
+        nextMappingCount: 0,
+        addedFields: [],
+        removedFields: [],
+        error: 'JSON parse error.',
+      };
+    }
+  };
+
+  const handleExportSchema = async () => {
+    const serialized = JSON.stringify(formConfig, null, 2);
+    try {
+      await navigator.clipboard.writeText(serialized);
+      setSchemaMessage('Schema copied to clipboard.');
+    } catch {
+      setSchemaInput(serialized);
+      setShowSchemaImport(true);
+      setSchemaMessage('Clipboard unavailable. Schema placed in import box.');
+    }
+  };
+
+  const handleImportSchema = () => {
+    const hasExistingConfig = formConfig.fields.length > 0 || Boolean(formConfig.responseMappings?.length);
+    if (hasExistingConfig) {
+      const confirmed = window.confirm('Import schema will replace current form configuration. Continue?');
+      if (!confirmed) {
+        setSchemaMessage('Import canceled.');
+        return;
+      }
+    }
+
+    try {
+      const parsed = JSON.parse(schemaInput);
+      const normalized = normalizeImportedFormConfig(parsed);
+      if (!normalized) {
+        setSchemaMessage('Invalid schema format.');
+        return;
+      }
+
+      setUndoSnapshot(cloneFormConfig(formConfig));
+      updateActiveRequest({ formConfig: normalized });
+      setSchemaMessage('Schema imported successfully.');
+      setShowSchemaImport(false);
+    } catch {
+      setSchemaMessage('Schema JSON parse failed.');
+    }
+  };
+
+  const handleResetToAutoGenerated = () => {
+    const confirmed = window.confirm('Reset current form config to auto-generated schema from request?');
+    if (!confirmed) {
+      return;
+    }
+
+    setUndoSnapshot(cloneFormConfig(formConfig));
+    updateActiveRequest({ formConfig: createAutoFormConfigFromRequest(request) });
+    setSchemaMessage('Form reset to auto-generated schema.');
+  };
+
+  const handleUndoLastReplace = () => {
+    if (!undoSnapshot) {
+      return;
+    }
+
+    updateActiveRequest({ formConfig: undoSnapshot });
+    setUndoSnapshot(null);
+    setSchemaMessage('Last replace action has been undone.');
+  };
+
+  const importPreview = showSchemaImport ? getImportPreview() : null;
+
+  return (
+    <div className="flex flex-col h-full overflow-auto p-4">
+      <div className="max-w-4xl w-full space-y-5 pb-8">
+        <section className="border border-app-border rounded-lg overflow-hidden">
+          <div className="px-4 py-3 bg-app-sidebar border-b border-app-border flex flex-wrap items-center gap-2 justify-between">
+            <div>
+              <p className="text-sm text-app-text font-medium">Request Form Interface</p>
+              <p className="text-xs text-app-muted">Auto-generate form from request, then customize with drag and drop mapping.</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => updateFormConfig({ enabled: !formConfig.enabled })}
+                className={`text-xs px-3 py-1.5 rounded border ${formConfig.enabled ? 'bg-emerald-600 border-emerald-500 text-white' : 'border-app-border text-app-muted hover:text-app-text hover:bg-app-hover'}`}
+              >
+                {formConfig.enabled ? 'Form Enabled' : 'Enable Form'}
+              </button>
+              <button
+                onClick={() => {
+                  const existingHeaderFields = (formConfig.fields || []).filter((f) => f.target === 'header');
+                  if (existingHeaderFields.length > 0) {
+                    const confirmed = window.confirm(
+                      `Auto-generate will replace current form with fields from request body only. This will remove ${existingHeaderFields.length} header field(s). Continue?`
+                    );
+                    if (!confirmed) {
+                      return;
+                    }
+                  }
+                  updateActiveRequest({ formConfig: createAutoFormConfigFromRequest(request) });
+                }}
+                className="btn-ghost text-xs inline-flex items-center gap-1.5"
+                title="Auto-generate form fields from request body parameters"
+              >
+                <Sparkles size={12} /> Auto Generate
+              </button>
+              <button
+                onClick={() => {
+                  if (!collectionId || storageMode !== 'remote') {
+                    setSchemaMessage('Form sharing requires remote mode and a saved collection request.');
+                    return;
+                  }
+                  if (!hasShareableFormRequests) {
+                    setSchemaMessage('Enable form and add at least one field before sharing a public form link.');
+                    return;
+                  }
+                  openShareModal(collectionId, 'form');
+                }}
+                className="btn-ghost text-xs inline-flex items-center gap-1.5"
+                title={
+                  storageMode === 'remote'
+                    ? hasShareableFormRequests
+                      ? 'Open dedicated share form link modal'
+                      : 'Enable at least one form request first'
+                    : 'Switch to remote mode to share form'
+                }
+              >
+                <Share2 size={12} /> Share Form
+              </button>
+            </div>
+          </div>
+
+          <div className="p-4 space-y-4">
+            {!formConfig.enabled && (
+              <p className="text-xs text-app-muted">Enable the form to make this endpoint available as a shared public form interface.</p>
+            )}
+
+            {formConfig.enabled && (
+              <>
+                <div className="border border-app-border rounded p-3 space-y-2">
+                  <p className="text-xs uppercase tracking-wider text-app-muted">Quick Templates</p>
+                  <div className="flex flex-wrap gap-2">
+                    <button onClick={() => applyTemplate('login')} className="btn-ghost text-xs">+ Login</button>
+                    <button onClick={() => applyTemplate('register')} className="btn-ghost text-xs">+ Register</button>
+                    <button onClick={() => applyTemplate('address')} className="btn-ghost text-xs">+ Address</button>
+                    <button onClick={() => applyTemplate('payment')} className="btn-ghost text-xs">+ Payment</button>
+                  </div>
+                  <div className="pt-1 border-t border-app-border space-y-2">
+                    <p className="text-[11px] text-app-muted">Custom Templates (stored in this request, synced on Save)</p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <input
+                        value={customTemplateName}
+                        onChange={(event) => setCustomTemplateName(event.target.value)}
+                        placeholder="Template name"
+                        className="input-field text-xs max-w-48"
+                      />
+                      <button onClick={handleSaveCurrentAsTemplate} className="btn-ghost text-xs">Save Current Fields</button>
+                    </div>
+                    {savedTemplates.length > 0 && (
+                      <div className="space-y-1.5">
+                        {savedTemplates.map((template) => (
+                          <div key={template.id} className="flex flex-wrap items-center gap-2 text-xs">
+                            <span className="text-app-text">{template.name}</span>
+                            <span className="text-app-muted">({template.fields.length} fields)</span>
+                            <button onClick={() => handleApplySavedTemplate(template.id)} className="btn-ghost text-xs">Apply</button>
+                            <button onClick={() => handleRenameSavedTemplate(template.id)} className="btn-ghost text-xs">Rename</button>
+                            <button onClick={() => handleDeleteSavedTemplate(template.id)} className="btn-ghost text-xs">Delete</button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="border border-app-border rounded p-3 space-y-2">
+                  <p className="text-xs uppercase tracking-wider text-app-muted">Schema Tools</p>
+                  <div className="flex flex-wrap gap-2">
+                    <button onClick={handleExportSchema} className="btn-ghost text-xs inline-flex items-center gap-1">
+                      <Download size={12} /> Export Schema
+                    </button>
+                    <button onClick={() => setShowSchemaImport((prev) => !prev)} className="btn-ghost text-xs">
+                      <span className="inline-flex items-center gap-1">
+                        <Upload size={12} /> {showSchemaImport ? 'Hide Import' : 'Import Schema'}
+                      </span>
+                    </button>
+                    <button onClick={handleResetToAutoGenerated} className="btn-ghost text-xs inline-flex items-center gap-1">
+                      <RotateCcw size={12} /> Reset To Auto
+                    </button>
+                    <button
+                      onClick={handleUndoLastReplace}
+                      className="btn-ghost text-xs inline-flex items-center gap-1"
+                      disabled={!undoSnapshot}
+                      title={!undoSnapshot ? 'No replace action to undo yet' : 'Undo last import or reset'}
+                    >
+                      <RotateCcw size={12} /> Undo Replace
+                    </button>
+                  </div>
+                  {showSchemaImport && (
+                    <div className="space-y-2">
+                      <textarea
+                        value={schemaInput}
+                        onChange={(event) => setSchemaInput(event.target.value)}
+                        className="input-field font-mono text-xs min-h-24"
+                        placeholder="Paste RequestFormConfig JSON here"
+                      />
+                      <button onClick={handleImportSchema} className="btn-primary text-xs py-1.5">Apply Imported Schema</button>
+                      {importPreview && (
+                        <div className="text-[11px] rounded border border-app-border p-2 space-y-1 text-app-muted">
+                          {importPreview.valid ? (
+                            <>
+                              <p>Preview: {importPreview.nextFieldCount} fields, {importPreview.nextMappingCount} mappings.</p>
+                              <p>Added fields: {importPreview.addedFields.length || 0} | Removed fields: {importPreview.removedFields.length || 0}</p>
+                              {importPreview.addedFields.length > 0 && (
+                                <p className="break-words">Added names: {importPreview.addedFields.slice(0, 8).join(', ')}{importPreview.addedFields.length > 8 ? ' ...' : ''}</p>
+                              )}
+                              {importPreview.removedFields.length > 0 && (
+                                <p className="break-words">Removed names: {importPreview.removedFields.slice(0, 8).join(', ')}{importPreview.removedFields.length > 8 ? ' ...' : ''}</p>
+                              )}
+                            </>
+                          ) : (
+                            <p>Preview error: {importPreview.error}</p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {schemaMessage && <p className="text-xs text-app-muted">{schemaMessage}</p>}
+                </div>
+
+                <div className="border border-app-border rounded p-3 space-y-3">
+                  <div>
+                    <p className="text-xs uppercase tracking-wider text-app-muted">Visual Builder Canvas (Drag & Drop)</p>
+                    <p className="text-[11px] text-app-muted mt-1">Drag field type from palette and drop it into a section/card. Drag existing field cards to move position between sections.</p>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setVisualPreviewMode('desktop')}
+                      className={`btn-ghost text-xs ${visualPreviewMode === 'desktop' ? 'border-app-accent text-app-text' : ''}`}
+                    >
+                      Desktop Preview
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setVisualPreviewMode('mobile')}
+                      className={`btn-ghost text-xs ${visualPreviewMode === 'mobile' ? 'border-app-accent text-app-text' : ''}`}
+                    >
+                      Mobile Preview
+                    </button>
+                  </div>
+
+                  <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleCanvasDrop}>
+                    <div className="border border-app-border rounded p-3 bg-app-active/20 grid grid-cols-1 lg:grid-cols-[220px_1fr] gap-3">
+                      <div className="space-y-2">
+                        <p className="text-[11px] uppercase tracking-wider text-app-muted">Field Palette</p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {PALETTE_FIELD_TYPES.map((type) => (
+                            <PaletteFieldCard key={type} type={type} />
+                          ))}
+                        </div>
+                      </div>
+
+                      <SortableContext items={formConfig.fields.map((field) => field.id)} strategy={verticalListSortingStrategy}>
+                        <div className={`${visualPreviewMode === 'mobile' ? 'max-w-[420px]' : 'w-full'} space-y-3`}>
+                          {(groupOrder.length > 0 ? groupOrder : ['General']).map((groupName) => {
+                            const groupFields = formConfig.fields.filter(
+                              (field) => ((field.group || 'General').trim() || 'General') === groupName,
+                            );
+
+                            return (
+                              <CanvasGroupDropZone key={`canvas-group-${groupName}`} groupName={groupName}>
+                                <p className="text-[11px] uppercase tracking-wider text-app-muted">{groupName}</p>
+                                {groupFields.length === 0 ? (
+                                  <p className="text-[11px] text-app-muted border border-dashed border-app-border rounded p-2">
+                                    Drop field here
+                                  </p>
+                                ) : (
+                                  <div className={`grid grid-cols-1 ${visualPreviewMode === 'desktop' ? 'md:grid-cols-2' : ''} gap-2`}>
+                                    {groupFields.map((field) => (
+                                      <CanvasFieldDropTarget key={`canvas-field-${field.id}`} fieldId={field.id}>
+                                        <SortableFieldShell fieldId={field.id}>
+                                          <div className={`text-xs ${field.layoutWidth === 'full' && visualPreviewMode === 'desktop' ? 'md:col-span-2' : ''}`}>
+                                            <div className="flex items-center justify-between gap-2">
+                                              <span className="font-medium text-app-text truncate">{field.label}</span>
+                                              <span className="text-app-muted font-mono text-[10px]">{field.type}</span>
+                                            </div>
+                                            <div className="mt-1 text-[10px] text-app-muted font-mono break-all">{field.target}{' -> '}{field.targetKey}</div>
+                                          </div>
+                                        </SortableFieldShell>
+                                      </CanvasFieldDropTarget>
+                                    ))}
+                                  </div>
+                                )}
+                              </CanvasGroupDropZone>
+                            );
+                          })}
+                        </div>
+                      </SortableContext>
+                    </div>
+                  </DndContext>
+                </div>
+
+                {groupOrder.length > 0 && (
+                  <div className="border border-app-border rounded p-3 space-y-2">
+                    <p className="text-xs uppercase tracking-wider text-app-muted">Group Order (Drag & Drop)</p>
+                    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleGroupSortEnd}>
+                      <SortableContext items={groupOrder} strategy={horizontalListSortingStrategy}>
+                        <div className="flex flex-wrap gap-2">
+                          {groupOrder.map((groupName) => (
+                            <SortableGroupChip
+                              key={groupName}
+                              groupName={groupName}
+                              onMoveUp={() => moveGroupBy(groupName, -1)}
+                              onMoveDown={() => moveGroupBy(groupName, 1)}
+                            />
+                          ))}
+                        </div>
+                      </SortableContext>
+                    </DndContext>
+                  </div>
+                )}
+
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs uppercase tracking-wider text-app-muted">Form Fields</p>
+                    <button
+                      onClick={() => updateFormConfig({ fields: [...formConfig.fields, createCustomField()] })}
+                      className="btn-ghost text-xs inline-flex items-center gap-1"
+                    >
+                      <Plus size={12} /> Add Custom Field
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-app-muted">Drag field cards to reorder position. Use Layout Width for half/full placement.</p>
+
+                  {formConfig.fields.length === 0 && (
+                    <div className="text-xs text-app-muted border border-dashed border-app-border rounded p-3">
+                      No fields yet. Click Auto Generate or add custom fields.
+                    </div>
+                  )}
+
+                  <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleFieldSortEnd}>
+                    <SortableContext items={formConfig.fields.map((field) => field.id)} strategy={verticalListSortingStrategy}>
+                      {formConfig.fields.map((field) => (
+                        <SortableFieldShell key={field.id} fieldId={field.id}>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                        <label className="text-xs text-app-muted">
+                          Label
+                          <input
+                            value={field.label}
+                            onChange={(event) => updateField(field.id, { label: event.target.value })}
+                            className="input-field mt-1 text-xs"
+                          />
+                        </label>
+                        <label className="text-xs text-app-muted">
+                          Field Name
+                          <input
+                            value={field.name}
+                            onChange={(event) => updateField(field.id, { name: event.target.value })}
+                            className="input-field mt-1 text-xs font-mono"
+                          />
+                        </label>
+                        <label className="text-xs text-app-muted">
+                          Type
+                          <select
+                            value={field.type}
+                            onChange={(event) =>
+                              updateField(field.id, {
+                                type: event.target.value as RequestFormFieldType,
+                                options:
+                                  event.target.value === 'select' || event.target.value === 'radio'
+                                    ? (field.options && field.options.length > 0
+                                      ? field.options
+                                      : [{ id: createOptionId(), label: 'Option 1', value: 'option_1' }])
+                                    : field.options,
+                              })
+                            }
+                            className="input-field mt-1 text-xs bg-app-panel"
+                          >
+                            {FIELD_TYPES.map((type) => (
+                              <option key={type} value={type}>{type}</option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="text-xs text-app-muted">
+                          Target Mapping
+                          <select
+                            value={field.target}
+                            onChange={(event) => updateField(field.id, { target: event.target.value as RequestFormFieldTarget })}
+                            className="input-field mt-1 text-xs bg-app-panel"
+                          >
+                            {FIELD_TARGETS.map((target) => (
+                              <option key={target} value={target}>{target}</option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="text-xs text-app-muted">
+                          Target Key / Path
+                          <input
+                            value={field.targetKey}
+                            onChange={(event) => updateField(field.id, { targetKey: event.target.value })}
+                            className="input-field mt-1 text-xs font-mono"
+                            placeholder="username / Authorization / data.profile.id"
+                          />
+                        </label>
+                        <label className="text-xs text-app-muted">
+                          Default Value
+                          <input
+                            value={field.defaultValue || ''}
+                            onChange={(event) => updateField(field.id, { defaultValue: event.target.value })}
+                            className="input-field mt-1 text-xs"
+                          />
+                        </label>
+                        <label className="text-xs text-app-muted md:col-span-2">
+                          Placeholder
+                          <input
+                            value={field.placeholder || ''}
+                            onChange={(event) => updateField(field.id, { placeholder: event.target.value })}
+                            className="input-field mt-1 text-xs"
+                          />
+                        </label>
+                        <label className="text-xs text-app-muted md:col-span-2">
+                          Description
+                          <input
+                            value={field.description || ''}
+                            onChange={(event) => updateField(field.id, { description: event.target.value })}
+                            className="input-field mt-1 text-xs"
+                          />
+                        </label>
+                        <label className="text-xs text-app-muted md:col-span-2">
+                          Group / Section
+                          <input
+                            value={field.group || ''}
+                            onChange={(event) => updateField(field.id, { group: event.target.value })}
+                            className="input-field mt-1 text-xs"
+                            placeholder="Authentication / Billing / Profile"
+                          />
+                        </label>
+                        <label className="text-xs text-app-muted">
+                          Layout Width
+                          <select
+                            value={field.layoutWidth || 'half'}
+                            onChange={(event) =>
+                              updateField(field.id, {
+                                layoutWidth: event.target.value === 'full' ? 'full' : 'half',
+                              })
+                            }
+                            className="input-field mt-1 text-xs bg-app-panel"
+                          >
+                            <option value="half">Half width (2-column)</option>
+                            <option value="full">Full width</option>
+                          </select>
+                        </label>
+
+                        {(field.type === 'number' || field.type === 'range') && (
+                          <>
+                            <label className="text-xs text-app-muted">
+                              Min
+                              <input
+                                type="number"
+                                value={field.min ?? ''}
+                                onChange={(event) => updateField(field.id, { min: event.target.value === '' ? undefined : Number(event.target.value) })}
+                                className="input-field mt-1 text-xs"
+                              />
+                            </label>
+                            <label className="text-xs text-app-muted">
+                              Max
+                              <input
+                                type="number"
+                                value={field.max ?? ''}
+                                onChange={(event) => updateField(field.id, { max: event.target.value === '' ? undefined : Number(event.target.value) })}
+                                className="input-field mt-1 text-xs"
+                              />
+                            </label>
+                            <label className="text-xs text-app-muted">
+                              Step
+                              <input
+                                type="number"
+                                value={field.step ?? ''}
+                                onChange={(event) => updateField(field.id, { step: event.target.value === '' ? undefined : Number(event.target.value) })}
+                                className="input-field mt-1 text-xs"
+                              />
+                            </label>
+                          </>
+                        )}
+
+                        {(field.type === 'text' || field.type === 'email' || field.type === 'tel' || field.type === 'url' || field.type === 'password') && (
+                          <label className="text-xs text-app-muted">
+                            Pattern (Regex)
+                            <input
+                              value={field.pattern || ''}
+                              onChange={(event) => updateField(field.id, { pattern: event.target.value })}
+                              className="input-field mt-1 text-xs font-mono"
+                              placeholder="^[a-zA-Z0-9_]+$"
+                            />
+                          </label>
+                        )}
+
+                        {field.type === 'file' && (
+                          <>
+                            <label className="text-xs text-app-muted">
+                              Accept
+                              <input
+                                value={field.accept || ''}
+                                onChange={(event) => updateField(field.id, { accept: event.target.value })}
+                                className="input-field mt-1 text-xs"
+                                placeholder="image/*,.pdf"
+                              />
+                            </label>
+                            <label className="text-xs text-app-muted inline-flex items-center gap-2 mt-6">
+                              <input
+                                type="checkbox"
+                                checked={Boolean(field.multiple)}
+                                onChange={(event) => updateField(field.id, { multiple: event.target.checked })}
+                                className="w-3.5 h-3.5 accent-orange-500"
+                              />
+                              Allow multiple files
+                            </label>
+                          </>
+                        )}
+
+                        {(field.type === 'select' || field.type === 'radio') && (
+                          <div className="md:col-span-2 border border-app-border rounded p-2">
+                            <div className="flex items-center justify-between mb-2">
+                              <p className="text-xs text-app-muted">Options</p>
+                              <button
+                                onClick={() => addFieldOption(field.id)}
+                                className="btn-ghost text-xs inline-flex items-center gap-1"
+                              >
+                                <Plus size={11} /> Add Option
+                              </button>
+                            </div>
+                            <div className="space-y-2">
+                              {(field.options || []).map((option) => (
+                                <div key={option.id} className="grid grid-cols-1 md:grid-cols-[1fr_1fr_auto] gap-2">
+                                  <input
+                                    value={option.label}
+                                    onChange={(event) => updateFieldOption(field.id, option.id, { label: event.target.value })}
+                                    className="input-field text-xs"
+                                    placeholder="Label"
+                                  />
+                                  <input
+                                    value={option.value}
+                                    onChange={(event) => updateFieldOption(field.id, option.id, { value: event.target.value })}
+                                    className="input-field text-xs font-mono"
+                                    placeholder="value"
+                                  />
+                                  <button
+                                    onClick={() => removeFieldOption(field.id, option.id)}
+                                    className="btn-ghost text-xs inline-flex items-center gap-1 justify-center"
+                                  >
+                                    <Trash2 size={11} />
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {field.type === 'address' && (
+                          <p className="md:col-span-2 text-[11px] text-app-muted">
+                            Address field stores JSON object with: street, city, state, postalCode, country.
+                          </p>
+                        )}
+
+                        {field.type === 'json' && (
+                          <p className="md:col-span-2 text-[11px] text-app-muted">
+                            JSON field expects valid JSON text and supports mapping into nested object path.
+                          </p>
+                        )}
+
+                        <div className="md:col-span-2 border border-app-border rounded p-2 space-y-2">
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                            <label className="text-xs text-app-muted inline-flex items-center gap-2">
+                              <input
+                                type="checkbox"
+                                checked={Boolean(field.repeatable)}
+                                onChange={(event) => updateField(field.id, { repeatable: event.target.checked })}
+                                className="w-3.5 h-3.5 accent-orange-500"
+                              />
+                              Repeatable (array)
+                            </label>
+                            {field.repeatable && (
+                              <label className="text-xs text-app-muted">
+                                Item Separator
+                                <select
+                                  value={field.repeatSeparator || 'newline'}
+                                  onChange={(event) => updateField(field.id, { repeatSeparator: event.target.value as 'newline' | 'comma' | 'json-lines' })}
+                                  className="input-field mt-1 text-xs bg-app-panel"
+                                >
+                                  <option value="newline">New line</option>
+                                  <option value="comma">Comma</option>
+                                  <option value="json-lines">JSON lines</option>
+                                </select>
+                              </label>
+                            )}
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                            <label className="text-xs text-app-muted">
+                              Visibility Depends On
+                              <select
+                                value={field.visibilityDependsOnFieldName || ''}
+                                onChange={(event) => updateField(field.id, { visibilityDependsOnFieldName: event.target.value })}
+                                className="input-field mt-1 text-xs bg-app-panel"
+                              >
+                                <option value="">Always visible</option>
+                                {formConfig.fields
+                                  .filter((candidate) => candidate.id !== field.id)
+                                  .map((candidate) => (
+                                    <option key={candidate.id} value={candidate.name}>{candidate.label || candidate.name}</option>
+                                  ))}
+                              </select>
+                            </label>
+
+                            {(field.visibilityDependsOnFieldName || '').trim() && (
+                              <>
+                                <label className="text-xs text-app-muted">
+                                  Operator
+                                  <select
+                                    value={field.visibilityOperator || 'equals'}
+                                    onChange={(event) =>
+                                      updateField(field.id, {
+                                        visibilityOperator: event.target.value as RequestFormField['visibilityOperator'],
+                                      })
+                                    }
+                                    className="input-field mt-1 text-xs bg-app-panel"
+                                  >
+                                    <option value="equals">equals</option>
+                                    <option value="not-equals">not-equals</option>
+                                    <option value="contains">contains</option>
+                                    <option value="filled">filled</option>
+                                    <option value="not-filled">not-filled</option>
+                                  </select>
+                                </label>
+                                {field.visibilityOperator !== 'filled' && field.visibilityOperator !== 'not-filled' && (
+                                  <label className="text-xs text-app-muted">
+                                    Compare Value
+                                    <input
+                                      value={field.visibilityValue || ''}
+                                      onChange={(event) => updateField(field.id, { visibilityValue: event.target.value })}
+                                      className="input-field mt-1 text-xs"
+                                    />
+                                  </label>
+                                )}
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="mt-3 flex items-center justify-between">
+                        <label className="text-xs text-app-muted inline-flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={Boolean(field.required)}
+                            onChange={(event) => updateField(field.id, { required: event.target.checked })}
+                            className="w-3.5 h-3.5 accent-orange-500"
+                          />
+                          Required field
+                        </label>
+                        <button onClick={() => removeField(field.id)} className="btn-ghost text-xs inline-flex items-center gap-1">
+                          <Trash2 size={11} /> Remove
+                        </button>
+                      </div>
+                        </SortableFieldShell>
+                      ))}
+                    </SortableContext>
+                  </DndContext>
+                </div>
+
+                <div className="border-t border-app-border pt-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs uppercase tracking-wider text-app-muted">Auth Dependency</p>
+                    <label className="text-xs text-app-muted inline-flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(formConfig.authRequirement?.enabled)}
+                        onChange={(event) =>
+                          updateFormConfig({
+                            authRequirement: {
+                              ...(formConfig.authRequirement || createDefaultFormConfig().authRequirement!),
+                              enabled: event.target.checked,
+                            },
+                          })
+                        }
+                        className="w-3.5 h-3.5 accent-orange-500"
+                      />
+                      Require auth from another request
+                    </label>
+                  </div>
+
+                  {formConfig.authRequirement?.enabled && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                      <label className="text-xs text-app-muted">
+                        Source Request
+                        <select
+                          value={formConfig.authRequirement.sourceRequestId || ''}
+                          onChange={(event) =>
+                            updateFormConfig({
+                              authRequirement: {
+                                ...formConfig.authRequirement,
+                                enabled: true,
+                                sourceRequestId: event.target.value,
+                              },
+                            })
+                          }
+                          className="input-field mt-1 text-xs bg-app-panel"
+                        >
+                          <option value="">Select request...</option>
+                          {availableAuthRequests.map((entry) => (
+                            <option key={entry.id} value={entry.id}>{entry.name}</option>
+                          ))}
+                        </select>
+                      </label>
+
+                      <label className="text-xs text-app-muted">
+                        Token Path in JSON response
+                        <input
+                          value={formConfig.authRequirement.tokenPath || ''}
+                          onChange={(event) =>
+                            updateFormConfig({
+                              authRequirement: {
+                                ...formConfig.authRequirement,
+                                enabled: true,
+                                tokenPath: event.target.value,
+                              },
+                            })
+                          }
+                          className="input-field mt-1 text-xs font-mono"
+                          placeholder="token or data.access_token"
+                        />
+                      </label>
+
+                      <label className="text-xs text-app-muted">
+                        Header Name
+                        <input
+                          value={formConfig.authRequirement.headerName || 'Authorization'}
+                          onChange={(event) =>
+                            updateFormConfig({
+                              authRequirement: {
+                                ...formConfig.authRequirement,
+                                enabled: true,
+                                headerName: event.target.value,
+                              },
+                            })
+                          }
+                          className="input-field mt-1 text-xs font-mono"
+                        />
+                      </label>
+
+                      <label className="text-xs text-app-muted">
+                        Header Scheme
+                        <select
+                          value={formConfig.authRequirement.scheme || 'Bearer'}
+                          onChange={(event) =>
+                            updateFormConfig({
+                              authRequirement: {
+                                ...formConfig.authRequirement,
+                                enabled: true,
+                                scheme: event.target.value as 'Bearer' | 'Token' | 'Raw',
+                              },
+                            })
+                          }
+                          className="input-field mt-1 text-xs bg-app-panel"
+                        >
+                          <option value="Bearer">Bearer</option>
+                          <option value="Token">Token</option>
+                          <option value="Raw">Raw token</option>
+                        </select>
+                      </label>
+                    </div>
+                  )}
+                </div>
+
+                <div className="border-t border-app-border pt-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs uppercase tracking-wider text-app-muted">Response To Form Mapping</p>
+                    <button
+                      onClick={() => {
+                        const firstField = formConfig.fields[0];
+                        const firstRequest = availableAuthRequests[0];
+                        if (!firstField || !firstRequest) {
+                          return;
+                        }
+                        updateFormConfig({
+                          responseMappings: [
+                            ...(formConfig.responseMappings || []),
+                            {
+                              id: createMappingId(),
+                              sourceRequestId: firstRequest.id,
+                              responsePath: 'token',
+                              targetFieldId: firstField.id,
+                            },
+                          ],
+                        });
+                      }}
+                      className="btn-ghost text-xs inline-flex items-center gap-1"
+                    >
+                      <Plus size={12} /> Add Mapping
+                    </button>
+                  </div>
+
+                  {(formConfig.responseMappings || []).map((mapping) => (
+                    <div key={mapping.id} className="grid grid-cols-1 md:grid-cols-4 gap-2 items-end border border-app-border rounded p-3">
+                      <label className="text-xs text-app-muted">
+                        Source Request
+                        <select
+                          value={mapping.sourceRequestId}
+                          onChange={(event) =>
+                            updateFormConfig({
+                              responseMappings: (formConfig.responseMappings || []).map((entry) =>
+                                entry.id === mapping.id ? { ...entry, sourceRequestId: event.target.value } : entry,
+                              ),
+                            })
+                          }
+                          className="input-field mt-1 text-xs bg-app-panel"
+                        >
+                          <option value="">Select request...</option>
+                          {availableAuthRequests.map((entry) => (
+                            <option key={entry.id} value={entry.id}>{entry.name}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="text-xs text-app-muted">
+                        Response Path
+                        <input
+                          value={mapping.responsePath}
+                          onChange={(event) =>
+                            updateFormConfig({
+                              responseMappings: (formConfig.responseMappings || []).map((entry) =>
+                                entry.id === mapping.id ? { ...entry, responsePath: event.target.value } : entry,
+                              ),
+                            })
+                          }
+                          className="input-field mt-1 text-xs font-mono"
+                          placeholder="data.user.id"
+                        />
+                      </label>
+                      <label className="text-xs text-app-muted">
+                        Target Field
+                        <select
+                          value={mapping.targetFieldId}
+                          onChange={(event) =>
+                            updateFormConfig({
+                              responseMappings: (formConfig.responseMappings || []).map((entry) =>
+                                entry.id === mapping.id ? { ...entry, targetFieldId: event.target.value } : entry,
+                              ),
+                            })
+                          }
+                          className="input-field mt-1 text-xs bg-app-panel"
+                        >
+                          {formConfig.fields.map((field) => (
+                            <option key={field.id} value={field.id}>{field.label || field.name}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <button
+                        onClick={() =>
+                          updateFormConfig({
+                            responseMappings: (formConfig.responseMappings || []).filter((entry) => entry.id !== mapping.id),
+                          })
+                        }
+                        className="btn-ghost text-xs inline-flex items-center gap-1 justify-center"
+                      >
+                        <Trash2 size={11} /> Remove
+                      </button>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="border-t border-app-border pt-4 space-y-3">
+                  <p className="text-xs uppercase tracking-wider text-app-muted">Form Scripts</p>
+                  <label className="text-xs text-app-muted block">
+                    Before Submit Script (JS, receives <code>context</code>)
+                    <textarea
+                      value={formConfig.scripts?.beforeSubmit || ''}
+                      onChange={(event) =>
+                        updateFormConfig({
+                          scripts: {
+                            ...(formConfig.scripts || {}),
+                            beforeSubmit: event.target.value,
+                          },
+                        })
+                      }
+                      className="input-field mt-1 font-mono text-xs min-h-20"
+                      placeholder="context.values.username = context.values.username?.trim();\nreturn context.values;"
+                    />
+                  </label>
+
+                  <label className="text-xs text-app-muted block">
+                    After Response Script (JS, receives <code>context</code>)
+                    <textarea
+                      value={formConfig.scripts?.afterResponse || ''}
+                      onChange={(event) =>
+                        updateFormConfig({
+                          scripts: {
+                            ...(formConfig.scripts || {}),
+                            afterResponse: event.target.value,
+                          },
+                        })
+                      }
+                      className="input-field mt-1 font-mono text-xs min-h-20"
+                      placeholder="if (context.response.status === 200) { return { message: 'ok' }; }"
+                    />
+                  </label>
+                </div>
+
+                <div className="border-t border-app-border pt-4 space-y-3">
+                  <p className="text-xs uppercase tracking-wider text-app-muted">Form UI & Styling</p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                    <label className="text-xs text-app-muted">
+                      Form Title
+                      <input
+                        value={formConfig.ui?.title || ''}
+                        onChange={(event) =>
+                          updateFormConfig({
+                            ui: {
+                              ...(formConfig.ui || {}),
+                              title: event.target.value,
+                            },
+                          })
+                        }
+                        className="input-field mt-1 text-xs"
+                        placeholder="Contact Form"
+                      />
+                    </label>
+                    <label className="text-xs text-app-muted">
+                      Submit Button Label
+                      <input
+                        value={formConfig.ui?.submitLabel || 'Submit Form'}
+                        onChange={(event) =>
+                          updateFormConfig({
+                            ui: {
+                              ...(formConfig.ui || {}),
+                              submitLabel: event.target.value,
+                            },
+                          })
+                        }
+                        className="input-field mt-1 text-xs"
+                        placeholder="Send"
+                      />
+                    </label>
+                    <label className="text-xs text-app-muted md:col-span-2">
+                      Form Subtitle
+                      <input
+                        value={formConfig.ui?.subtitle || ''}
+                        onChange={(event) =>
+                          updateFormConfig({
+                            ui: {
+                              ...(formConfig.ui || {}),
+                              subtitle: event.target.value,
+                            },
+                          })
+                        }
+                        className="input-field mt-1 text-xs"
+                        placeholder="Please fill all required fields"
+                      />
+                    </label>
+                    <label className="text-xs text-app-muted inline-flex items-center gap-2 mt-1">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(formConfig.ui?.showReset ?? true)}
+                        onChange={(event) =>
+                          updateFormConfig({
+                            ui: {
+                              ...(formConfig.ui || {}),
+                              showReset: event.target.checked,
+                            },
+                          })
+                        }
+                        className="w-3.5 h-3.5 accent-orange-500"
+                      />
+                      Show reset button
+                    </label>
+                    <label className="text-xs text-app-muted">
+                      Reset Button Label
+                      <input
+                        value={formConfig.ui?.resetLabel || 'Reset'}
+                        onChange={(event) =>
+                          updateFormConfig({
+                            ui: {
+                              ...(formConfig.ui || {}),
+                              resetLabel: event.target.value,
+                            },
+                          })
+                        }
+                        className="input-field mt-1 text-xs"
+                        placeholder="Clear"
+                      />
+                    </label>
+                  </div>
+
+                  <label className="text-xs text-app-muted block">
+                    Custom Style (CSS applied on public form for this request)
+                    <textarea
+                      value={formConfig.ui?.customStyle || ''}
+                      onChange={(event) =>
+                        updateFormConfig({
+                          ui: {
+                            ...(formConfig.ui || {}),
+                            customStyle: event.target.value,
+                          },
+                        })
+                      }
+                      className="input-field mt-1 font-mono text-xs min-h-20"
+                      placeholder=".form-title { color: #22c55e; }\n.form-submit { border-radius: 9999px; }"
+                    />
+                  </label>
+
+                  <label className="text-xs text-app-muted block">
+                    Custom Script (JS before submit, receives <code>context</code>)
+                    <textarea
+                      value={formConfig.ui?.customScript || ''}
+                      onChange={(event) =>
+                        updateFormConfig({
+                          ui: {
+                            ...(formConfig.ui || {}),
+                            customScript: event.target.value,
+                          },
+                        })
+                      }
+                      className="input-field mt-1 font-mono text-xs min-h-20"
+                      placeholder="if (!context.values.email?.includes('@')) { throw new Error('Email invalid'); }\nreturn context.values;"
+                    />
+                  </label>
+                </div>
+              </>
+            )}
+          </div>
+        </section>
+
+        <p className="text-xs text-app-muted">
+          Form configuration is part of this request. Click Save (or press Ctrl+S) to persist it to your collection/backend.
+        </p>
+      </div>
+    </div>
+  );
+}

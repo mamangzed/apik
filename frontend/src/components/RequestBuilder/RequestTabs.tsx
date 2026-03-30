@@ -7,6 +7,7 @@ import BodyTab from './BodyTab';
 import AuthTab from './AuthTab';
 import ScriptTab from './ScriptTab';
 import DocsTab from './DocsTab';
+import FormTab from './FormTab';
 import { Search, X } from 'lucide-react';
 
 const TABS: { id: RequestTab; label: string }[] = [
@@ -16,6 +17,7 @@ const TABS: { id: RequestTab; label: string }[] = [
   { id: 'auth', label: 'Auth' },
   { id: 'pre-script', label: 'Pre-Request' },
   { id: 'test-script', label: 'Post-Request' },
+  { id: 'form', label: 'Form' },
   { id: 'docs', label: 'Docs' },
 ];
 
@@ -135,6 +137,7 @@ export default function RequestTabs() {
         {activeTab === 'auth' && <AuthTab />}
         {activeTab === 'pre-script' && <ScriptTab type="pre" />}
         {activeTab === 'test-script' && <ScriptTab type="test" />}
+        {activeTab === 'form' && <FormTab />}
         {activeTab === 'docs' && <DocsTab />}
       </div>
     </div>
